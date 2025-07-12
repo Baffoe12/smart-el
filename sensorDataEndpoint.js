@@ -71,6 +71,7 @@ module.exports = (app) => {
         if (sensorData[relayKey]) {
           const appliance = await Appliance.findOne({ where: { id: i } });
           if (appliance) {
+            console.log(`Found appliance with id ${appliance.id} for relay ${i}`);
             const current = sensorData[`current${i}`] || null;
             const voltage = sensorData.voltage || null;
       const power = current && voltage ? current * voltage : null;
@@ -92,6 +93,8 @@ module.exports = (app) => {
         })
       );
           }
+        } else {
+          console.log(`No sensor data for relay ${i} in received data`);
         }
       }
 
