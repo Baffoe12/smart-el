@@ -1,0 +1,41 @@
+{
+  "development": {
+    "username": "electricity_db_user",
+    "password": "b8u969CD8Rw5gjSuRySH9mp5KXQKhjlt",
+    "database": "electricity_db",
+    "host": "dpg-d1oqtrur433s73cmblk0-a.oregon-postgres.render.com",
+    "dialect": "postgres",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false
+      }
+    }
+  },
+  "test": {
+    "username": "electricity_db_user",
+    "password": "b8u969CD8Rw5gjSuRySH9mp5KXQKhjlt",
+    "database": "electricity_db",
+    "host": "dpg-d1oqtrur433s73cmblk0-a.oregon-postgres.render.com",
+    "dialect": "postgres",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false
+      }
+    }
+  },
+  "production": {
+    "username": "electricity_db_user",
+    "password": "b8u969CD8Rw5gjSuRySH9mp5KXQKhjlt",
+    "database": "electricity_db",
+    "host": "dpg-d1oqtrur433s73cmblk0-a.oregon-postgres.render.com",
+    "dialect": "postgres",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false
+      }
+    }
+  }
+}
