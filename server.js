@@ -19,11 +19,13 @@ app.use(bodyParser.json());
 // Relay control API endpoint
 app.post('/api/relay-control', async (req, res) => {
   const { ip, relay, state } = req.body;
+  console.log(`Relay control request received: ip=${ip}, relay=${relay}, state=${state}`);
   if (!ip || !relay || !state) {
     return res.status(400).json({ error: 'IP, relay, and state are required' });
   }
   try {
     const url = `http://${ip}/relay?relay=${relay}&state=${state}`;
+    console.log(`Sending relay control command to URL: ${url}`);
     const response = await axios.get(url);
     res.json({ message: 'Relay control command sent', data: response.data });
   } catch (error) {
