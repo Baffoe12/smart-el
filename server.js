@@ -254,6 +254,25 @@ app.post('/api/appliances/:id/control', async (req, res) => {
   }
 });
 
+// Update appliance relay status
+app.put('/api/appliances/:id/relay', async (req, res) => {
+  const id = req.params.id;
+  const { isOn } = req.body;
+  if (typeof isOn !== 'boolean') {
+    return res.status(400).json({ error: 'Invalid isOn value' });
+  }
+  try {
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ error: 'Appliance not found' });
+    }
+    await appliance.update({ isOn });
+    res.json(appliance);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update appliance relay status' });
+  }
+});
+
 // Get anomaly detection details and logs
 app.get('/api/anomalies', async (req, res) => {
   try {
