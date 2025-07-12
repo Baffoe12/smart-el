@@ -4,5 +4,8 @@
 echo "Installing dependencies..."
 npm install
 
+echo "Running database migrations..."
+npx sequelize-cli db:migrate
+
 echo "Starting the server..."
 npm start
