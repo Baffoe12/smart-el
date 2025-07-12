@@ -74,24 +74,24 @@ module.exports = (app) => {
             console.log(`Found appliance with id ${appliance.id} for relay ${i}`);
             const current = sensorData[`current${i}`] || null;
             const voltage = sensorData.voltage || null;
-      const power = current && voltage ? current * voltage : null;
-      const energy = sensorData.energy || null; // Now expecting energy from ESP32
-      const cost = sensorData.cost || null; // Now expecting cost from ESP32
-      const relayState = sensorData[`relay${i}`] === true || sensorData[`relay${i}`] === 'true';
+            const power = current && voltage ? current * voltage : null;
+            const energy = sensorData.energy || null; // Now expecting energy from ESP32
+            const cost = sensorData.cost || null; // Now expecting cost from ESP32
+            const relayState = sensorData[`relay${i}`] === true || sensorData[`relay${i}`] === 'true';
 
-      console.log(`Storing sensor data for appliance ${appliance.id}: current=${current}, voltage=${voltage}, power=${power}, energy=${energy}, cost=${cost}, relayState=${relayState}`);
+            console.log(`Storing sensor data for appliance ${appliance.id}: current=${current}, voltage=${voltage}, power=${power}, energy=${energy}, cost=${cost}, relayState=${relayState}`);
 
-      promises.push(
-        SensorData.create({
-          applianceId: appliance.id,
-          current,
-          voltage,
-          power,
-          energy,
-          cost,
-          relayState,
-        })
-      );
+            promises.push(
+              SensorData.create({
+                applianceId: appliance.id,
+                current,
+                voltage,
+                power,
+                energy,
+                cost,
+                relayState,
+              })
+            );
           }
         } else {
           console.log(`No sensor data for relay ${i} in received data`);
