@@ -5,30 +5,42 @@ module.exports = (app) => {
   // Get recent sensor data for all appliances
   app.get('/api/sensor-data', async (req, res) => {
     try {
-      // Aggregate latest sensor data per appliance (relay)
+      // Aggregate latest sensor data per relay number by querying appliances
       const aggregatedData = {};
-      for (let i = 1; i <= 4; i++) {
-        const latestData = await SensorData.findOne({
-          where: { applianceId: i },
-          order: [['timestamp', 'DESC']],
-        });
-        console.log(`Latest sensor data for appliance ${i}:`, latestData ? latestData.toJSON() : null);
-        if (latestData) {
-          aggregatedData[`relay${i}`] = latestData.relayState;
-          aggregatedData[`current${i}`] = latestData.current;
-          aggregatedData[`power${i}`] = latestData.power;
-          aggregatedData[`energy${i}`] = latestData.energy;
-          aggregatedData[`cost${i}`] = latestData.cost;
-          // voltage is common, so set it once from the first relay data
-          if (!aggregatedData.voltage) {
-            aggregatedData.voltage = latestData.voltage;
+      for (let relayNum = 1; relayNum <= 4; relayNum++) {
+        const appliance = await Appliance.findOne({ where: { relay: relayNum } });
+        if (appliance) {
+          const latestData = await SensorData.findOne({
+            where: { applianceId: appliance.id },
+            order: [['timestamp', 'DESC']],
+          });
+          console.log(`Latest sensor data for appliance ${appliance.id} (relay ${relayNum}):`, latestData ? latestData.toJSON() : null);
+          if (latestData) {
+            aggregatedData[`relay${relayNum}`] = latestData.relayState;
+            aggregatedData[`current${relayNum}`] = latestData.current;
+            aggregatedData[`power${relayNum}`] = latestData.power;
+            aggregatedData[`energy${relayNum}`] = latestData.energy;
+            aggregatedData[`cost${relayNum}`] = latestData.cost;
+            if (!aggregatedData.voltage) {
+              aggregatedData.voltage = latestData.voltage;
+            }
+          } else {
+            aggregatedData[`relay${relayNum}`] = false;
+            aggregatedData[`current${relayNum}`] = null;
+            aggregatedData[`power${relayNum}`] = null;
+            aggregatedData[`energy${relayNum}`] = null;
+            aggregatedData[`cost${relayNum}`] = null;
+            if (!aggregatedData.voltage) {
+              aggregatedData.voltage = null;
+            }
           }
         } else {
-          aggregatedData[`relay${i}`] = false;
-          aggregatedData[`current${i}`] = null;
-          aggregatedData[`power${i}`] = null;
-          aggregatedData[`energy${i}`] = null;
-          aggregatedData[`cost${i}`] = null;
+          console.log(`No appliance found for relay ${relayNum}`);
+          aggregatedData[`relay${relayNum}`] = false;
+          aggregatedData[`current${relayNum}`] = null;
+          aggregatedData[`power${relayNum}`] = null;
+          aggregatedData[`energy${relayNum}`] = null;
+          aggregatedData[`cost${relayNum}`] = null;
           if (!aggregatedData.voltage) {
             aggregatedData.voltage = null;
           }
