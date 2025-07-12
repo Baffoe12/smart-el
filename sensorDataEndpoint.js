@@ -12,6 +12,7 @@ module.exports = (app) => {
           where: { applianceId: i },
           order: [['timestamp', 'DESC']],
         });
+        console.log(`Latest sensor data for appliance ${i}:`, latestData ? latestData.toJSON() : null);
         if (latestData) {
           aggregatedData[`relay${i}`] = latestData.relayState;
           aggregatedData[`current${i}`] = latestData.current;
@@ -76,6 +77,8 @@ module.exports = (app) => {
       const energy = sensorData.energy || null; // Now expecting energy from ESP32
       const cost = sensorData.cost || null; // Now expecting cost from ESP32
       const relayState = sensorData[`relay${i}`] === true || sensorData[`relay${i}`] === 'true';
+
+      console.log(`Storing sensor data for appliance ${appliance.id}: current=${current}, voltage=${voltage}, power=${power}, energy=${energy}, cost=${cost}, relayState=${relayState}`);
 
       promises.push(
         SensorData.create({
