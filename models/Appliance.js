@@ -6,6 +6,10 @@ const Appliance = sequelize.define('Appliance', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  relay: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   current: {
     type: DataTypes.FLOAT,
     defaultValue: 0,

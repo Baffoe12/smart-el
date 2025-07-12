@@ -157,12 +157,12 @@ app.get('/api/appliances', async (req, res) => {
 
 // Add new appliance
 app.post('/api/appliances', async (req, res) => {
-  const { type } = req.body;
+  const { type, relay } = req.body;
   if (!type) {
     return res.status(400).json({ error: 'Appliance type is required' });
   }
   try {
-    const newAppliance = await Appliance.create({ type });
+    const newAppliance = await Appliance.create({ type, relay });
     res.status(201).json(newAppliance);
   } catch (err) {
     res.status(500).json({ error: 'Failed to add appliance' });
@@ -245,8 +245,9 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     if (!appliance) {
       return res.status(404).json({ error: 'Appliance not found' });
     }
-    // Simulate control action, e.g., send command to device
+    // Simulate control action, e.g., send command to device or relay
     console.log(`Control command received for appliance ID: ${id}, action: ${action}`);
+    // Here you can add code to send command to the relay hardware if applicable
     res.json({ message: `Appliance ${id} turned ${action}` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to control appliance' });
