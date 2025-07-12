@@ -106,4 +106,15 @@ module.exports = (app) => {
       res.status(500).json({ error: 'Failed to store sensor data' });
     }
   });
+
+  // New endpoint to get all appliances and their IDs for verification
+  app.get('/api/appliances', async (req, res) => {
+    try {
+      const appliances = await Appliance.findAll();
+      res.json(appliances);
+    } catch (error) {
+      console.error('Error fetching appliances:', error);
+      res.status(500).json({ error: 'Failed to fetch appliances' });
+    }
+  });
 };
