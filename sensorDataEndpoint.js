@@ -5,12 +5,35 @@ module.exports = (app) => {
   // Get recent sensor data for all appliances
   app.get('/api/sensor-data', async (req, res) => {
     try {
-      const data = await SensorData.findAll({
-        include: [{ model: Appliance }],
-        order: [['timestamp', 'DESC']],
-        limit: 100,
-      });
-      res.json(data);
+      // Aggregate latest sensor data per appliance (relay)
+      const aggregatedData = {};
+      for (let i = 1; i <= 4; i++) {
+        const latestData = await SensorData.findOne({
+          where: { applianceId: i },
+          order: [['timestamp', 'DESC']],
+        });
+        if (latestData) {
+          aggregatedData[`relay${i}`] = latestData.relayState;
+          aggregatedData[`current${i}`] = latestData.current;
+          aggregatedData[`power${i}`] = latestData.power;
+          aggregatedData[`energy${i}`] = latestData.energy;
+          aggregatedData[`cost${i}`] = latestData.cost;
+          // voltage is common, so set it once from the first relay data
+          if (!aggregatedData.voltage) {
+            aggregatedData.voltage = latestData.voltage;
+          }
+        } else {
+          aggregatedData[`relay${i}`] = false;
+          aggregatedData[`current${i}`] = null;
+          aggregatedData[`power${i}`] = null;
+          aggregatedData[`energy${i}`] = null;
+          aggregatedData[`cost${i}`] = null;
+          if (!aggregatedData.voltage) {
+            aggregatedData.voltage = null;
+          }
+        }
+      }
+      res.json(aggregatedData);
     } catch (error) {
       console.error('Error fetching sensor data:', error);
       res.status(500).json({ error: 'Failed to fetch sensor data' });
