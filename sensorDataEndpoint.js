@@ -81,7 +81,7 @@ module.exports = (app) => {
       for (let i = 1; i <= 4; i++) {
         const relayKey = `relay${i}`;
         if (sensorData[relayKey]) {
-          const appliance = await Appliance.findOne({ where: { id: i } });
+          const appliance = await Appliance.findOne({ where: { relay: i } });
           if (appliance) {
             console.log(`Found appliance with id ${appliance.id} for relay ${i}`);
             const current = sensorData[`current${i}`] || null;
