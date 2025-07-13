@@ -16,33 +16,33 @@ module.exports = (app) => {
           });
           console.log(`Latest sensor data for appliance ${appliance.id} (relay ${relayNum}):`, latestData ? latestData.toJSON() : null);
           if (latestData) {
-            aggregatedData[`relay${relayNum}`] = latestData.relayState;
-            aggregatedData[`current${relayNum}`] = latestData.current;
-            aggregatedData[`power${relayNum}`] = latestData.power;
-            aggregatedData[`energy${relayNum}`] = latestData.energy;
-            aggregatedData[`cost${relayNum}`] = latestData.cost;
+            aggregatedData[`relay${relayNum}`] = latestData.relayState !== null ? latestData.relayState : false;
+            aggregatedData[`current${relayNum}`] = latestData.current !== null ? latestData.current : 0;
+            aggregatedData[`power${relayNum}`] = latestData.power !== null ? latestData.power : 0;
+            aggregatedData[`energy${relayNum}`] = latestData.energy !== null ? latestData.energy : 0;
+            aggregatedData[`cost${relayNum}`] = latestData.cost !== null ? latestData.cost : 0;
             if (!aggregatedData.voltage) {
-              aggregatedData.voltage = latestData.voltage;
+              aggregatedData.voltage = latestData.voltage !== null ? latestData.voltage : 0;
             }
           } else {
             aggregatedData[`relay${relayNum}`] = false;
-            aggregatedData[`current${relayNum}`] = null;
-            aggregatedData[`power${relayNum}`] = null;
-            aggregatedData[`energy${relayNum}`] = null;
-            aggregatedData[`cost${relayNum}`] = null;
+            aggregatedData[`current${relayNum}`] = 0;
+            aggregatedData[`power${relayNum}`] = 0;
+            aggregatedData[`energy${relayNum}`] = 0;
+            aggregatedData[`cost${relayNum}`] = 0;
             if (!aggregatedData.voltage) {
-              aggregatedData.voltage = null;
+              aggregatedData.voltage = 0;
             }
           }
         } else {
           console.log(`No appliance found for relay ${relayNum}`);
           aggregatedData[`relay${relayNum}`] = false;
-          aggregatedData[`current${relayNum}`] = null;
-          aggregatedData[`power${relayNum}`] = null;
-          aggregatedData[`energy${relayNum}`] = null;
-          aggregatedData[`cost${relayNum}`] = null;
+          aggregatedData[`current${relayNum}`] = 0;
+          aggregatedData[`power${relayNum}`] = 0;
+          aggregatedData[`energy${relayNum}`] = 0;
+          aggregatedData[`cost${relayNum}`] = 0;
           if (!aggregatedData.voltage) {
-            aggregatedData.voltage = null;
+            aggregatedData.voltage = 0;
           }
         }
       }
@@ -84,12 +84,16 @@ module.exports = (app) => {
           const appliance = await Appliance.findOne({ where: { relay: i } });
           if (appliance) {
             console.log(`Found appliance with id ${appliance.id} for relay ${i}`);
-            const current = sensorData[`current${i}`] || null;
-            const voltage = sensorData.voltage || null;
-            const power = current && voltage ? current * voltage : null;
+            const current = sensorData[`current${i}`] !== undefined ? sensorData[`current${i}`] : null;
+            const voltage = sensorData.voltage !== undefined ? sensorData.voltage : null;
+            const power = current !== null && voltage !== null ? current * voltage : null;
             const energy = sensorData[`energy${i}`] !== undefined ? sensorData[`energy${i}`] : null;
             const cost = sensorData[`cost${i}`] !== undefined ? sensorData[`cost${i}`] : null;
             const relayState = sensorData[`relay${i}`] === true || sensorData[`relay${i}`] === 'true';
+
+            if (current === null || voltage === null) {
+              console.warn(`Warning: Missing current or voltage for appliance ${appliance.id} on relay ${i}`);
+            }
 
             console.log(`Storing sensor data for appliance ${appliance.id}: current=${current}, voltage=${voltage}, power=${power}, energy=${energy}, cost=${cost}, relayState=${relayState}`);
 
@@ -104,6 +108,13 @@ module.exports = (app) => {
                 relayState,
               })
             );
+
+            // Update Appliance model fields for quick reference
+            appliance.current = current !== null ? current : appliance.current;
+            appliance.voltage = voltage !== null ? voltage : appliance.voltage;
+            appliance.power = power !== null ? power : appliance.power;
+            appliance.isOn = relayState;
+            await appliance.save();
           }
         } else {
           console.log(`No sensor data for relay ${i} in received data`);
