@@ -87,8 +87,8 @@ module.exports = (app) => {
             const current = sensorData[`current${i}`] || null;
             const voltage = sensorData.voltage || null;
             const power = current && voltage ? current * voltage : null;
-            const energy = sensorData.energy || null; // Now expecting energy from ESP32
-            const cost = sensorData.cost || null; // Now expecting cost from ESP32
+            const energy = sensorData[`energy${i}`] !== undefined ? sensorData[`energy${i}`] : null;
+            const cost = sensorData[`cost${i}`] !== undefined ? sensorData[`cost${i}`] : null;
             const relayState = sensorData[`relay${i}`] === true || sensorData[`relay${i}`] === 'true';
 
             console.log(`Storing sensor data for appliance ${appliance.id}: current=${current}, voltage=${voltage}, power=${power}, energy=${energy}, cost=${cost}, relayState=${relayState}`);
