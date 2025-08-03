@@ -329,6 +329,51 @@ app.post('/api/thresholds', async (req, res) => {
   }
 });
 
+// Schedule appliance on/off times
+app.post('/api/appliances/:id/schedule', async (req, res) => {
+  const { onTime, offTime, ip } = req.body;
+  const appliance = await Appliance.findByPk(req.params.id);
+
+  if (!appliance) {
+    return res.status(404).json({ error: 'Appliance not found' });
+  }
+
+  if (!onTime || !offTime || !ip) {
+    return res.status(400).json({ error: 'onTime, offTime, and ip are required' });
+  }
+
+  // Schedule ON
+  setTimeout(async () => {
+    try {
+      const url = `http://${ip}/relay?relay=${appliance.relay}&state=1`;
+      console.log(`Sending relay ON command to URL: ${url}`);
+      const response = await axios.get(url);
+      console.log(`Relay ON command sent for appliance ${appliance.id}`);
+    } catch (error) {
+      console.error('Error sending relay ON command:', error.message);
+    }
+  }, new Date(onTime) - Date.now());
+
+  // Schedule OFF
+  setTimeout(async () => {
+    try {
+      const url = `http://${ip}/relay?relay=${appliance.relay}&state=0`;
+      console.log(`Sending relay OFF command to URL: ${url}`);
+      const response = await axios.get(url);
+      console.log(`Relay OFF command sent for appliance ${appliance.id}`);
+    } catch (error) {
+      console.error('Error sending relay OFF command:', error.message);
+    }
+  }, new Date(offTime) - Date.now());
+
+  appliance.scheduled = true;
+  appliance.scheduleOn = onTime;
+  appliance.scheduleOff = offTime;
+  await appliance.save();
+
+  res.json(appliance);
+});
+
 app.listen(port, '0.0.0.0', () => {
   console.log(`Backend server running on port ${port}`);
 });
