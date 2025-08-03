@@ -1,5 +1,5 @@
 const sequelize = require('./sequelize');
-const Appliance = require('./models/Appliance');
+const { Appliance } = require('./models');
 
 async function cleanupAppliances() {
   try {

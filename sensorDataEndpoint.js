@@ -1,60 +1,105 @@
 // sensorDataEndpoint.js
 
-const Appliance = require('./models/Appliance');
-const SensorData = require('./models/SensorData');
+const { Appliance, SensorData } = require('./models');
 const { Sequelize } = require('sequelize');
 
+// === Helper: Parse Text Format (e.g., Serial Monitor Output) ===
+function parseEspData(data) {
+  if (typeof data !== 'string') return { relays: [], total: {} };
+  const lines = data.split('\n');
+  const relays = [];
+  let total = { energy_kwh: 0, cost_ghs: 0 };
+
+  for (const line of lines) {
+    // Match: "Relay 1: ON  - 0.50A | 115W | 0.001 kWh | 0.00 Ghs"
+    const relayMatch = line.match(/Relay\s+(\d+):\s+(ON|OFF)\s*-\s*([0-9.]+)A\s*\|\s*([0-9.]+)W\s*\|\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
+    if (relayMatch) {
+      relays.push({
+        id: parseInt(relayMatch[1]),
+        state: relayMatch[2] === 'ON',
+        current: parseFloat(relayMatch[3]),
+        power: parseFloat(relayMatch[4]),
+        energy_kwh: parseFloat(relayMatch[5]),
+        cost_ghs: parseFloat(relayMatch[6])
+      });
+    }
+
+    // Match: "TOTAL: 0.013 kWh | 0.02 Ghs"
+    const totalMatch = line.match(/TOTAL:\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
+    if (totalMatch) {
+      total.energy_kwh = parseFloat(totalMatch[1]);
+      total.cost_ghs = parseFloat(totalMatch[2]);
+    }
+  }
+  return { relays, total };
+}
+
 module.exports = function (app) {
-  // === POST /api/sensor-data ===
-  // Receive JSON data from ESP32
+
+  // === POST /api/sensor-data - Receive JSON from ESP32 ===
   app.post('/api/sensor-data', async (req, res) => {
-    const data = req.body;
+    const { device_id, timestamp, relays, total } = req.body;
 
-    console.log('✅ Sensor data received:', JSON.stringify(data, null, 2));
+    console.log('✅ Received sensor data:', JSON.stringify(req.body, null, 2));
 
-    // Validate required fields
-    if (!data.device_id || !Array.isArray(data.relays)) {
-      return res.status(400).json({ error: 'Invalid data format: missing device_id or relays' });
+    // Validate input
+    if (!relays || !Array.isArray(relays)) {
+      return res.status(400).json({
+        error: 'Invalid data format',
+        message: 'Missing or invalid "relays" array'
+      });
     }
 
     try {
       // Process each relay
-      for (const relay of data.relays) {
-        const appliance = await Appliance.findOne({ where: { relay: relay.id } });
+      for (const relayData of relays) {
+        const { id, state, current, power, energy_kwh, cost_ghs } = relayData;
+
+        // Find appliance by relay number
+        const appliance = await Appliance.findOne({ where: { relay: id } });
         if (!appliance) {
-          console.log(`⚠️ No appliance found for relay ${relay.id}`);
+          console.log(`⚠️ No appliance found for relay ${id}`);
           continue;
         }
 
-        // Update appliance current status
+        // Update appliance live values
         await appliance.update({
-          isOn: relay.state || false,
-          current: parseFloat(relay.current) || 0,
-          power: parseFloat(relay.power) || 0,
-          amount: parseFloat(relay.cost_ghs) || 0
+          isOn: state,
+          current: parseFloat(current) || 0,
+          power: parseFloat(power) || 0,
+          amount: parseFloat(cost_ghs) || 0
         });
 
         // Save raw sensor reading
         await SensorData.create({
           applianceId: appliance.id,
-          current: parseFloat(relay.current) || 0,
-          power: parseFloat(relay.power) || 0,
-          energy: parseFloat(relay.energy_kwh) || 0,
-          cost: parseFloat(relay.cost_ghs) || 0,
-          relayState: relay.state || false,
+          current: parseFloat(current) || 0,
+          power: parseFloat(power) || 0,
+          energy: parseFloat(energy_kwh) || 0,
+          cost: parseFloat(cost_ghs) || 0,
+          relayState: state,
           voltage: 230.0
         });
 
-        console.log(`💾 Updated appliance "${appliance.type}" (Relay ${relay.id})`);
+        console.log(`💾 Saved data for "${appliance.type}" (Relay ${id})`);
       }
 
-      // Respond success
+      // Optional: Update total cost on one appliance
+      if (total && total.cost_ghs !== undefined) {
+        const masterAppliance = await Appliance.findOne({ where: { relay: 1 } });
+        if (masterAppliance) {
+          await masterAppliance.update({ amount: parseFloat(total.cost_ghs) || 0 });
+        }
+      }
+
+      // Success response
       res.status(200).json({
         message: 'Sensor data received and saved successfully',
         received: true,
-        device: data.device_id,
+        device_id,
         timestamp: new Date().toISOString()
       });
+
     } catch (error) {
       console.error('❌ Error processing sensor data:', error);
       res.status(500).json({
@@ -65,7 +110,7 @@ module.exports = function (app) {
   });
 
   // === GET /api/sensor-data/latest ===
-  // Get latest sensor readings for all appliances
+  // Get latest sensor reading for each appliance
   app.get('/api/sensor-data/latest', async (req, res) => {
     try {
       const appliances = await Appliance.findAll({
@@ -91,13 +136,13 @@ module.exports = function (app) {
 
       res.json(result);
     } catch (error) {
-      console.error('Error fetching latest data:', error);
-      res.status(500).json({ error: 'Failed to fetch latest sensor data' });
+      console.error('Error fetching latest sensor data:', error);
+      res.status(500).json({ error: 'Failed to fetch latest data' });
     }
   });
 
   // === GET /api/sensor-data ===
-  // Paginated and filtered sensor data
+  // Paginated historical data with filtering
   app.get('/api/sensor-data', async (req, res) => {
     try {
       const { applianceId, startDate, endDate, page = 1, limit = 50 } = req.query;
@@ -112,26 +157,25 @@ module.exports = function (app) {
       }
 
       const offset = (parseInt(page) - 1) * parseInt(limit);
-      const query = {
+      const { count, rows } = await SensorData.findAndCountAll({
         where,
         order: [['createdAt', 'DESC']],
         limit: parseInt(limit),
         offset,
         distinct: true
-      };
+      });
 
-      const result = await SensorData.findAndCountAll(query);
-      const totalPages = Math.ceil(result.count / limit);
+      const totalPages = Math.ceil(count / limit);
 
       res.json({
         success: true,
-        data: result.rows,
+        data: rows,
         pagination: {
           currentPage: parseInt(page),
           totalPages,
-          totalRecords: result.count,
-          hasNextPage: page < totalPages,
-          hasPrevPage: page > 1
+          totalRecords: count,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1
         }
       });
     } catch (error) {
@@ -140,39 +184,12 @@ module.exports = function (app) {
     }
   });
 
-  // === POST /api/esp-data (Optional: for text format parsing) ===
+  // === POST /api/esp-data (Text Format) ===
   app.post('/api/esp-data', async (req, res) => {
     const rawData = req.body;
     if (typeof rawData !== 'string') {
-      return res.status(400).json({ error: 'Expected text data' });
+      return res.status(400).json({ error: 'Expected string data' });
     }
-
-    const parseEspData = (data) => {
-      const lines = data.split('\n');
-      const relays = [];
-      let total = { energy_kwh: 0, cost_ghs: 0 };
-
-      for (const line of lines) {
-        const relayMatch = line.match(/Relay\s+(\d+):\s+(ON|OFF)\s*-\s*([0-9.]+)A\s*\|\s*([0-9.]+)W\s*\|\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
-        if (relayMatch) {
-          relays.push({
-            id: parseInt(relayMatch[1]),
-            state: relayMatch[2] === 'ON',
-            current: parseFloat(relayMatch[3]),
-            power: parseFloat(relayMatch[4]),
-            energy_kwh: parseFloat(relayMatch[5]),
-            cost_ghs: parseFloat(relayMatch[6])
-          });
-        }
-
-        const totalMatch = line.match(/TOTAL:\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
-        if (totalMatch) {
-          total.energy_kwh = parseFloat(totalMatch[1]);
-          total.cost_ghs = parseFloat(totalMatch[2]);
-        }
-      }
-      return { relays, total };
-    };
 
     const { relays, total } = parseEspData(rawData);
 

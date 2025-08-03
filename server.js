@@ -2,13 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const sequelize = require('./sequelize');
-const Appliance = require('./models/Appliance');
-const User = require('./models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sensorDataEndpoint = require('./sensorDataEndpoint');
 const axios = require('axios');
+
+// Import all models and sequelize instance
+const { sequelize, User, Appliance, SensorData } = require('./models');
 
 const app = express();
 const port = process.env.PORT || 3001;

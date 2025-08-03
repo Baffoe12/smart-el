@@ -2,36 +2,20 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../sequelize');
 
 const Appliance = sequelize.define('Appliance', {
-  type: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-  relay: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-  },
-  current: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0,
-  },
-  voltage: {
-    type: DataTypes.FLOAT,
-    defaultValue: 220,
-  },
-  power: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0,
-  },
-  amount: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0,
-  },
-  isOn: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false,
-  },
-}, {
-  timestamps: true,
+ // Add to Appliance model
+current: {
+  type: DataTypes.FLOAT,
+  defaultValue: 0.0
+},
+power: {
+  type: DataTypes.FLOAT,
+  defaultValue: 0.0
+},
+amount: {
+  type: DataTypes.FLOAT,
+  defaultValue: 0.0,
+  field: 'cost_ghs'
+}
 });
 
 module.exports = Appliance;

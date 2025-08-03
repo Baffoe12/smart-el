@@ -1,53 +1,50 @@
+// models/SensorData.js
 const { DataTypes } = require('sequelize');
 const sequelize = require('../sequelize');
-const Appliance = require('./Appliance');
 
 const SensorData = sequelize.define('SensorData', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
   applianceId: {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: Appliance,
-      key: 'id',
+      model: 'Appliances',
+      key: 'id'
     },
+    onDelete: 'CASCADE'
   },
   current: {
     type: DataTypes.FLOAT,
-    allowNull: true,
-  },
-  voltage: {
-    type: DataTypes.FLOAT,
-    allowNull: true,
+    allowNull: false,
+    defaultValue: 0.0
   },
   power: {
     type: DataTypes.FLOAT,
-    allowNull: true,
+    allowNull: false,
+    defaultValue: 0.0
   },
   energy: {
     type: DataTypes.FLOAT,
-    allowNull: true,
+    allowNull: false,
+    defaultValue: 0.0,
+    field: 'energy_kwh'
   },
   cost: {
     type: DataTypes.FLOAT,
-    allowNull: true,
+    allowNull: false,
+    defaultValue: 0.0,
+    field: 'cost_ghs'
   },
   relayState: {
     type: DataTypes.BOOLEAN,
-    allowNull: true,
+    allowNull: false
   },
-  timestamp: {
-    type: DataTypes.DATE,
-    allowNull: false,
-    defaultValue: DataTypes.NOW,
-  },
+  voltage: {
+    type: DataTypes.FLOAT,
+    defaultValue: 230.0
+  }
+}, {
+  tableName: 'SensorData',
+  timestamps: true
 });
-
-Appliance.hasMany(SensorData, { foreignKey: 'applianceId' });
-SensorData.belongsTo(Appliance, { foreignKey: 'applianceId' });
 
 module.exports = SensorData;

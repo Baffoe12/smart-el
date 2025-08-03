@@ -1,4 +1,4 @@
-const Appliance = require('./models/Appliance');
+const { Appliance } = require('./models');
 
 async function addAppliances() {
   const appliancesData = [

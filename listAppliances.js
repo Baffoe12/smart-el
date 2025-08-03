@@ -1,5 +1,4 @@
-const sequelize = require('./sequelize');
-const Appliance = require('./models/Appliance');
+const { sequelize, Appliance } = require('./models');
 
 async function listAppliances() {
   try {
