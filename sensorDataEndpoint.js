@@ -38,74 +38,33 @@ module.exports = function (app) {
 
   // === POST /api/sensor-data - Receive JSON from ESP32 ===
   app.post('/api/sensor-data', async (req, res) => {
-    const { device_id, timestamp, relays, total } = req.body;
-
-    console.log('✅ Received sensor data:', JSON.stringify(req.body, null, 2));
-
-    // Validate input
-    if (!relays || !Array.isArray(relays)) {
-      return res.status(400).json({
-        error: 'Invalid data format',
-        message: 'Missing or invalid "relays" array'
-      });
-    }
+    const { relays } = req.body;
 
     try {
-      // Process each relay
-      for (const relayData of relays) {
-        const { id, state, current, power, energy_kwh, cost_ghs } = relayData;
+      for (const r of relays) {
+        const appliance = await Appliance.findOne({ where: { relay: r.id } });
+        if (appliance) {
+          await appliance.update({
+            isOn: r.state,
+            current: r.current,
+            power: r.power,
+            amount: r.cost_ghs
+          });
 
-        // Find appliance by relay number
-        const appliance = await Appliance.findOne({ where: { relay: id } });
-        if (!appliance) {
-          console.log(`⚠️ No appliance found for relay ${id}`);
-          continue;
-        }
-
-        // Update appliance live values
-        await appliance.update({
-          isOn: state,
-          current: parseFloat(current) || 0,
-          power: parseFloat(power) || 0,
-          amount: parseFloat(cost_ghs) || 0
-        });
-
-        // Save raw sensor reading
-        await SensorData.create({
-          applianceId: appliance.id,
-          current: parseFloat(current) || 0,
-          power: parseFloat(power) || 0,
-          energy: parseFloat(energy_kwh) || 0,
-          cost: parseFloat(cost_ghs) || 0,
-          relayState: state,
-          voltage: 230.0
-        });
-
-        console.log(`💾 Saved data for "${appliance.type}" (Relay ${id})`);
-      }
-
-      // Optional: Update total cost on one appliance
-      if (total && total.cost_ghs !== undefined) {
-        const masterAppliance = await Appliance.findOne({ where: { relay: 1 } });
-        if (masterAppliance) {
-          await masterAppliance.update({ amount: parseFloat(total.cost_ghs) || 0 });
+          await SensorData.create({
+            applianceId: appliance.id,
+            current: r.current,
+            power: r.power,
+            energy: r.energy_kwh,
+            cost: r.cost_ghs,
+            relayState: r.state
+          });
         }
       }
 
-      // Success response
-      res.status(200).json({
-        message: 'Sensor data received and saved successfully',
-        received: true,
-        device_id,
-        timestamp: new Date().toISOString()
-      });
-
+      res.status(200).json({ message: 'Data saved' });
     } catch (error) {
-      console.error('❌ Error processing sensor data:', error);
-      res.status(500).json({
-        error: 'Failed to process sensor data',
-        details: error.message
-      });
+      res.status(500).json({ error: 'Save failed' });
     }
   });
 
@@ -119,25 +78,35 @@ module.exports = function (app) {
           as: 'SensorData',
           limit: 1,
           order: [['createdAt', 'DESC']]
-        }],
-        order: [['relay', 'ASC']]
+        }]
       });
 
-      const result = appliances.map(appliance => ({
-        applianceId: appliance.id,
-        type: appliance.type,
-        relay: appliance.relay,
-        isOn: appliance.isOn,
-        current: appliance.current,
-        power: appliance.power,
-        amount: appliance.amount,
-        latestReading: appliance.SensorData[0] || null
-      }));
+      const formattedData = {};
+      let totalEnergy = 0;
+      let totalCost = 0;
 
-      res.json(result);
+      appliances.forEach(appliance => {
+        const relayNum = appliance.relay;
+        const latest = appliance.SensorData[0];
+
+        formattedData[`relay${relayNum}`] = appliance.isOn;
+        formattedData[`current${relayNum}`] = appliance.current || 0;
+        formattedData[`power${relayNum}`] = appliance.power || 0;
+        formattedData[`energy${relayNum}`] = latest?.energy || 0;
+        formattedData[`cost${relayNum}`] = latest?.cost || 0;
+
+        totalEnergy += latest?.energy || 0;
+        totalCost += latest?.cost || 0;
+      });
+
+      formattedData.voltage = 230;
+      formattedData.totalEnergy = parseFloat(totalEnergy.toFixed(3));
+      formattedData.totalCost = parseFloat(totalCost.toFixed(2));
+
+      res.json(formattedData);
     } catch (error) {
-      console.error('Error fetching latest sensor data:', error);
-      res.status(500).json({ error: 'Failed to fetch latest data' });
+      console.error('Error fetching sensor data:', error);
+      res.status(500).json({ error: 'Failed to fetch sensor data' });
     }
   });
 
