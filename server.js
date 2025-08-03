@@ -7,6 +7,9 @@ const jwt = require('jsonwebtoken');
 const sensorDataEndpoint = require('./sensorDataEndpoint');
 const axios = require('axios');
 
+// Set your ESP32/relay board IP here
+const DEVICE_IP = '172.20.10.3'; // ← Change to your actual device IP
+
 // Import all models and sequelize instance
 const { sequelize, User, Appliance, SensorData } = require('./models');
 
@@ -329,25 +332,23 @@ app.post('/api/thresholds', async (req, res) => {
   }
 });
 
-// Schedule appliance on/off times
 app.post('/api/appliances/:id/schedule', async (req, res) => {
-  const { onTime, offTime, ip } = req.body;
+  const { onTime, offTime } = req.body; // ← No `ip` needed
   const appliance = await Appliance.findByPk(req.params.id);
-
-  if (!appliance) {
-    return res.status(404).json({ error: 'Appliance not found' });
+  if (!appliance) return res.status(404).json({ error: 'Appliance not found' });
+  if (!onTime || !offTime) {
+    return res.status(400).json({ error: 'onTime and offTime are required' });
   }
 
-  if (!onTime || !offTime || !ip) {
-    return res.status(400).json({ error: 'onTime, offTime, and ip are required' });
-  }
+  // Use fixed IP defined at top
+  const ip = DEVICE_IP;
 
   // Schedule ON
   setTimeout(async () => {
     try {
       const url = `http://${ip}/relay?relay=${appliance.relay}&state=1`;
-      console.log(`Sending relay ON command to URL: ${url}`);
-      const response = await axios.get(url);
+      console.log(`Scheduling ON: ${url}`);
+      await axios.get(url);
       console.log(`Relay ON command sent for appliance ${appliance.id}`);
     } catch (error) {
       console.error('Error sending relay ON command:', error.message);
@@ -358,14 +359,15 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
   setTimeout(async () => {
     try {
       const url = `http://${ip}/relay?relay=${appliance.relay}&state=0`;
-      console.log(`Sending relay OFF command to URL: ${url}`);
-      const response = await axios.get(url);
+      console.log(`Scheduling OFF: ${url}`);
+      await axios.get(url);
       console.log(`Relay OFF command sent for appliance ${appliance.id}`);
     } catch (error) {
       console.error('Error sending relay OFF command:', error.message);
     }
   }, new Date(offTime) - Date.now());
 
+  // Save schedule to appliance
   appliance.scheduled = true;
   appliance.scheduleOn = onTime;
   appliance.scheduleOff = offTime;
