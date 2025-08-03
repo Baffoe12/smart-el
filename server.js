@@ -15,6 +15,7 @@ const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.text({ type: 'text/plain' }));
 
 // Relay control API endpoint
 app.post('/api/relay-control', async (req, res) => {
