@@ -134,6 +134,13 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
   res.json(appliance);
 });
 
+// Get appliance relay status
+app.get('/api/appliances/:id/relay', async (req, res) => {
+  const appliance = await Appliance.findByPk(req.params.id);
+  if (!appliance) return res.status(404).json({ error: 'Appliance not found' });
+  res.json({ relay: appliance.relay, isOn: appliance.isOn });
+});
+
 // ✅ Appliance relay update
 app.put('/api/appliances/:id/relay', async (req, res) => {
   const { isOn } = req.body;
