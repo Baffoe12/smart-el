@@ -263,13 +263,18 @@ sequelize.authenticate()
 // Sync models
 sequelize.sync();
 
+// --- Place this BEFORE the 404 handler ---
 // Get all appliances
+// Ensure authentication middleware 'authenticate' is applied if needed by your frontend
 app.get('/api/appliances', async (req, res) => {
   try {
+    // Assuming you have an 'Appliance' model defined with Sequelize
     const appliances = await Appliance.findAll();
     res.json(appliances);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch appliances' });
+  } catch (error) {
+    console.error('Error fetching appliances:', error);
+    // Send a more descriptive error for easier debugging (temporarily)
+    res.status(500).json({ error: 'Failed to fetch appliances', details: error.message });
   }
 });
 
@@ -314,6 +319,23 @@ app.delete('/api/appliances/:id', async (req, res) => {
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete appliance' });
+  }
+});
+// --- Place this BEFORE the 404 handler ---
+// Get latest sensor data
+app.get('/api/sensor-data/latest', async (req, res) => {
+  try {
+    // Mock data for now, replace with actual database call
+    // Ensure you have a model or logic to fetch the latest reading
+    // Example mock response:
+    res.json({
+      energy: (Math.random() * 2 + 0.5).toFixed(3), // e.g., "1.234"
+      timestamp: new Date().toISOString(),
+      // Add other relevant fields if your frontend expects them
+    });
+  } catch (error) {
+    console.error('Error fetching latest sensor data:', error);
+    res.status(500).json({ error: 'Failed to fetch latest sensor data' });
   }
 });
 
