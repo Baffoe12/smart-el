@@ -42,9 +42,9 @@ sensorDataEndpoint(app);
 
 // Signup endpoint
 app.post('/api/signup', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email and password are required' });
   }
   try {
     const existingUser = await User.findOne({ where: { email } });
@@ -52,7 +52,7 @@ app.post('/api/signup', async (req, res) => {
       return res.status(409).json({ error: 'Email already in use' });
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ email, passwordHash });
+    const newUser = await User.create({ name, email, passwordHash });
     res.status(201).json({ message: 'User created successfully' });
   } catch (error) {
     console.error('Signup error:', error);
@@ -70,7 +70,7 @@ app.get('/api/user', async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json({ name: user.name || 'Demo User', email: user.email });
+    res.json({ name: user.name, email: user.email });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Failed to fetch user data' });
