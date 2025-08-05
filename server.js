@@ -16,9 +16,28 @@ const { sequelize, User, Appliance, SensorData } = require('./models');
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+// Middleware to ensure JSON responses for errors
+app.use((req, res, next) => {
+  // Set JSON content type for all responses
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
+// CORS middleware
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(bodyParser.json());
 app.use(bodyParser.text({ type: 'text/plain' }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
 
 // Relay control API endpoint
 app.post('/api/relay-control', async (req, res) => {
@@ -40,27 +59,78 @@ app.post('/api/relay-control', async (req, res) => {
 
 sensorDataEndpoint(app);
 
-// Signup endpoint
+// Signup endpoint with improved error handling
 app.post('/api/signup', async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, email and password are required' });
-  }
   try {
+    const { name, email, password } = req.body;
+    
+    // Validate input
+    if (!name || !email || !password) {
+      return res.status(400).json({ 
+        error: 'Name, email and password are required',
+        details: 'All fields must be provided'
+      });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Invalid email format',
+        details: 'Please provide a valid email address'
+      });
+    }
+    
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        error: 'Password too short',
+        details: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Check for existing user
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ error: 'Email already in use' });
+      return res.status(409).json({ 
+        error: 'Email already in use',
+        details: 'An account with this email already exists'
+      });
     }
+    
+    // Create new user
     const passwordHash = await bcrypt.hash(password, 10);
     const newUser = await User.create({ name, email, passwordHash });
-    res.status(201).json({ message: 'User created successfully' });
+    
+    res.status(201).json({ 
+      message: 'User created successfully',
+      user: { id: newUser.id, name: newUser.name, email: newUser.email }
+    });
+    
   } catch (error) {
     console.error('Signup error:', error);
-    res.status(500).json({ error: 'Failed to create user' });
+    
+    // Handle specific database errors
+    if (error.name === 'SequelizeValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation error',
+        details: error.errors.map(e => e.message)
+      });
+    }
+    
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ 
+        error: 'Email already in use',
+        details: 'This email address is already registered'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create user',
+      details: 'An unexpected error occurred. Please try again later.'
+    });
   }
 });
-
-
 
 // Get current user info endpoint
 app.get('/api/user', async (req, res) => {
@@ -77,26 +147,51 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// Login endpoint
+// Login endpoint with improved error handling
 app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
   try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ 
+        error: 'Email and password are required',
+        details: 'Both email and password must be provided'
+      });
+    }
+    
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        details: 'Email or password is incorrect'
+      });
     }
+    
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        details: 'Email or password is incorrect'
+      });
     }
-    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    res.json({ token });
+    
+    const token = jwt.sign(
+      { userId: user.id, email: user.email }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1h' }
+    );
+    
+    res.json({ 
+      token, 
+      user: { id: user.id, name: user.name, email: user.email }
+    });
+    
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Failed to login' });
+    res.status(500).json({ 
+      error: 'Failed to login',
+      details: 'An unexpected error occurred. Please try again later.'
+    });
   }
 });
 
@@ -141,6 +236,23 @@ app.post('/api/password-reset', async (req, res) => {
     console.error('Password reset error:', error);
     res.status(400).json({ error: 'Invalid or expired token' });
   }
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    details: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    details: `The requested endpoint ${req.method} ${req.path} does not exist`
+  });
 });
 
 // Connect to PostgreSQL
