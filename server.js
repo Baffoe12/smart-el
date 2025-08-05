@@ -317,6 +317,89 @@ app.delete('/api/appliances/:id', async (req, res) => {
   }
 });
 
+// Schedule appliance endpoint - FIXED
+app.post('/api/appliances/:id/schedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { onTime, offTime } = req.body;
+
+    // Validate input
+    if (!onTime || !offTime) {
+      return res.status(400).json({ 
+        error: 'onTime and offTime are required' 
+      });
+    }
+
+    // Validate date formats
+    const onDate = new Date(onTime);
+    const offDate = new Date(offTime);
+    
+    if (isNaN(onDate.getTime()) || isNaN(offDate.getTime())) {
+      return res.status(400).json({ 
+        error: 'Invalid date format' 
+      });
+    }
+
+    // Ensure offTime is after onTime
+    if (offDate <= onDate) {
+      return res.status(400).json({ 
+        error: 'offTime must be after onTime' 
+      });
+    }
+
+    // Find appliance
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ 
+        error: 'Appliance not found' 
+      });
+    }
+
+    // Update schedule
+    await appliance.update({
+      scheduled: true,
+      scheduleOn: onDate,
+      scheduleOff: offDate
+    });
+
+    res.json({ 
+      message: 'Schedule updated successfully',
+      appliance: {
+        id: appliance.id,
+        scheduled: appliance.scheduled,
+        scheduleOn: appliance.scheduleOn,
+        scheduleOff: appliance.scheduleOff
+      }
+    });
+
+  } catch (error) {
+    console.error('Schedule API Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update schedule',
+      details: error.message 
+    });
+  }
+});
+
+// Get appliance schedule
+app.get('/api/appliances/:id/schedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ error: 'Appliance not found' });
+    }
+    res.json({
+      scheduled: appliance.scheduled,
+      scheduleOn: appliance.scheduleOn,
+      scheduleOff: appliance.scheduleOff
+    });
+  } catch (error) {
+    console.error('Get schedule error:', error);
+    res.status(500).json({ error: 'Failed to fetch schedule' });
+  }
+});
+
 // Power cut command endpoint
 app.post('/api/appliances/:id/power-cut', async (req, res) => {
   const id = req.params.id;
