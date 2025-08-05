@@ -11,3 +11,4 @@ module.exports = {
     // This migration does nothing
     return Promise.resolve();
   }
+};
