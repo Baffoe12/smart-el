@@ -75,13 +75,20 @@ module.exports = function (app) {
       // Check database connection first
       await sequelize.authenticate();
       
-      const appliances = await Appliance.findAll({
-        include: [{
-          model: SensorData,
-          as: 'SensorData',
-          limit: 1,
-          order: [['createdAt', 'DESC']]
-        }]
+          const appliances = await Appliance.findAll({
+            include: [{
+              model: SensorData,
+              as: 'SensorData',
+              limit: 1,
+              order: [['createdAt', 'DESC']]
+            }]
+          });
+    
+          res.json({ success: true, data: appliances });
+        } catch (error) {
+          console.error('Error fetching latest sensor data:', error);
+          res.status(500).json({ error: 'Failed to fetch latest sensor data' });
+        }
       });
 
   // === GET /api/sensor-data ===
