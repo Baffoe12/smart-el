@@ -247,14 +247,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Endpoint not found',
-    details: `The requested endpoint ${req.method} ${req.path} does not exist`
-  });
-});
-
 // Connect to PostgreSQL
 sequelize.authenticate()
   .then(() => console.log('PostgreSQL connected'))
@@ -548,48 +540,13 @@ app.post('/api/thresholds', async (req, res) => {
   }
 });
 
-app.post('/api/appliances/:id/schedule', async (req, res) => {
-  const { onTime, offTime } = req.body; // ← No `ip` needed
-  const appliance = await Appliance.findByPk(req.params.id);
-  if (!appliance) return res.status(404).json({ error: 'Appliance not found' });
-  if (!onTime || !offTime) {
-    return res.status(400).json({ error: 'onTime and offTime are required' });
-  }
 
-  // Use fixed IP defined at top
-  const ip = DEVICE_IP;
 
-  // Schedule ON
-  setTimeout(async () => {
-    try {
-      const url = `http://${ip}/relay?relay=${appliance.relay}&state=1`;
-      console.log(`Scheduling ON: ${url}`);
-      await axios.get(url);
-      console.log(`Relay ON command sent for appliance ${appliance.id}`);
-    } catch (error) {
-      console.error('Error sending relay ON command:', error.message);
-    }
-  }, new Date(onTime) - Date.now());
-
-  // Schedule OFF
-  setTimeout(async () => {
-    try {
-      const url = `http://${ip}/relay?relay=${appliance.relay}&state=0`;
-      console.log(`Scheduling OFF: ${url}`);
-      await axios.get(url);
-      console.log(`Relay OFF command sent for appliance ${appliance.id}`);
-    } catch (error) {
-      console.error('Error sending relay OFF command:', error.message);
-    }
-  }, new Date(offTime) - Date.now());
-
-  // Save schedule to appliance
-  appliance.scheduled = true;
-  appliance.scheduleOn = onTime;
-  appliance.scheduleOff = offTime;
-  await appliance.save();
-
-  res.json(appliance);
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    details: `The requested endpoint ${req.method} ${req.path} does not exist`
+  });
 });
 
 app.listen(port, '0.0.0.0', () => {
