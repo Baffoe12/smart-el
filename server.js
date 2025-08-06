@@ -321,8 +321,7 @@ app.delete('/api/appliances/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to delete appliance' });
   }
 });
-// --- Place this BEFORE the 404 handler ---
-// Get latest sensor data
+
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
     // Mock data for now, replace with actual database call
