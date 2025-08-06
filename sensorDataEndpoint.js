@@ -1,6 +1,6 @@
 // sensorDataEndpoint.js
 
-const { Appliance, SensorData } = require('./models');
+const { Appliance, SensorData, sequelize } = require('./models');
 const { Sequelize } = require('sequelize');
 
 // === Helper: Parse Text Format (e.g., Serial Monitor Output) ===
