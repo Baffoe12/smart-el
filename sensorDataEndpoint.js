@@ -72,6 +72,9 @@ module.exports = function (app) {
   // Get latest sensor reading for each appliance
   app.get('/api/sensor-data/latest', async (req, res) => {
     try {
+      // Check database connection first
+      await sequelize.authenticate();
+      
       const appliances = await Appliance.findAll({
         include: [{
           model: SensorData,
@@ -80,35 +83,6 @@ module.exports = function (app) {
           order: [['createdAt', 'DESC']]
         }]
       });
-
-      const formattedData = {};
-      let totalEnergy = 0;
-      let totalCost = 0;
-
-      appliances.forEach(appliance => {
-        const relayNum = appliance.relay;
-        const latest = appliance.SensorData[0];
-
-        formattedData[`relay${relayNum}`] = appliance.isOn;
-        formattedData[`current${relayNum}`] = appliance.current || 0;
-        formattedData[`power${relayNum}`] = appliance.power || 0;
-        formattedData[`energy${relayNum}`] = latest?.energy || 0;
-        formattedData[`cost${relayNum}`] = latest?.cost || 0;
-
-        totalEnergy += latest?.energy || 0;
-        totalCost += latest?.cost || 0;
-      });
-
-      formattedData.voltage = 230;
-      formattedData.totalEnergy = parseFloat(totalEnergy.toFixed(3));
-      formattedData.totalCost = parseFloat(totalCost.toFixed(2));
-
-      res.json(formattedData);
-    } catch (error) {
-      console.error('Error fetching sensor data:', error);
-      res.status(500).json({ error: 'Failed to fetch sensor data' });
-    }
-  });
 
   // === GET /api/sensor-data ===
   // Paginated historical data with filtering
