@@ -261,14 +261,14 @@ sequelize.sync();
 app.get('/api/appliances', async (req, res) => {
   try {
     // Assuming you have an 'Appliance' model defined with Sequelize
-    const appliances = await Appliance.findAll();
-    res.json(appliances);
-  } catch (error) {
-    console.error('Error fetching appliances:', error);
-    // Send a more descriptive error for easier debugging (temporarily)
-    res.status(500).json({ error: 'Failed to fetch appliances', details: error.message });
-  }
-});
+   // When returning appliances, map id → applianceId
+const appliances = await Appliance.findAll();
+res.json(
+  appliances.map(appliance => ({
+    ...appliance.toJSON(),
+    applianceId: appliance.id
+  }))
+);
 
 // Add new appliance
 app.post('/api/appliances', async (req, res) => {
