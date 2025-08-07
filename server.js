@@ -334,7 +334,7 @@ app.get('/api/sensor-data/latest', async (req, res) => {
   }
 });
 
-// Schedule appliance endpoint - FIXED
+// Schedule appliance endpoint - with relay control
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   try {
     const { id } = req.params;
@@ -347,23 +347,84 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       });
     }
 
-    // Validate date formats
     const onDate = new Date(onTime);
     const offDate = new Date(offTime);
-    
     if (isNaN(onDate.getTime()) || isNaN(offDate.getTime())) {
       return res.status(400).json({ 
         error: 'Invalid date format' 
       });
     }
-
-    // Ensure offTime is after onTime
     if (offDate <= onDate) {
       return res.status(400).json({ 
         error: 'offTime must be after onTime' 
       });
     }
 
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ 
+        error: 'Appliance not found' 
+      });
+    }
+
+    // Update schedule in DB
+    await appliance.update({
+      scheduled: true,
+      scheduleOn: onDate,
+      scheduleOff: offDate
+    });
+
+    // Calculate delays in milliseconds
+    const delayOn = onDate - Date.now();
+    const delayOff = offDate - Date.now();
+
+    // Function to send relay command
+    const sendRelayCommand = async (state) => {
+      try {
+        const url = `http://${DEVICE_IP}/relay?relay=${appliance.relay}&state=${state}`;
+        console.log(`Sending relay command: ${url}`);
+        await axios.get(url);
+        console.log(`✅ Relay ${appliance.relay} turned ${state === 1 ? 'ON' : 'OFF'} for appliance ${id}`);
+      } catch (error) {
+        console.error(`❌ Failed to send relay ${state} command:`, error.message);
+      }
+    };
+
+    // Schedule ON command (only if in the future)
+    if (delayOn > 0) {
+      setTimeout(async () => {
+        await sendRelayCommand(1); // Turn ON
+      }, delayOn);
+    } else {
+      // If onTime is in the past, trigger immediately
+      await sendRelayCommand(1);
+    }
+
+    // Schedule OFF command (only if in the future)
+    if (delayOff > 0) {
+      setTimeout(async () => {
+        await sendRelayCommand(0); // Turn OFF
+      }, delayOff);
+    }
+
+    res.json({ 
+      message: 'Schedule updated and relay commands scheduled',
+      appliance: {
+        id: appliance.id,
+        scheduled: appliance.scheduled,
+        scheduleOn: appliance.scheduleOn,
+        scheduleOff: appliance.scheduleOff
+      }
+    });
+
+  } catch (error) {
+    console.error('Schedule API Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update schedule',
+      details: error.message 
+    });
+  }
+});
     // Find appliance
     const appliance = await Appliance.findByPk(id);
     if (!appliance) {
@@ -544,6 +605,43 @@ app.post('/api/thresholds', async (req, res) => {
   }
 });
 
+// Receive sensor data from ESP32
+app.post('/api/sensor-data', async (req, res) => {
+  try {
+    const { device_id, timestamp, relays, total } = req.body;
+
+    // ✅ Validate required fields
+    if (!device_id || !Array.isArray(relays) || !total || !timestamp) {
+      return res.status(400).json({ 
+        error: 'Missing required fields', 
+        details: 'Must include device_id, timestamp, relays[], and total' 
+      });
+    }
+
+    // ✅ Save each relay's sensor data
+    for (const relay of relays) {
+      await SensorData.create({
+        deviceId: device_id,
+        relayId: relay.id,
+        current: relay.current,
+        power: relay.power,
+        energyKwh: relay.energy_kwh,
+        costGhs: relay.cost_ghs,
+        timestamp: new Date(timestamp)
+      });
+    }
+
+    console.log(`✅ Sensor data saved from ${device_id}, ${relays.length} relays`);
+    res.status(201).json({ message: 'Sensor data received successfully' });
+
+  } catch (error) {
+    console.error('Error saving sensor data:', error);
+    res.status(500).json({ 
+      error: 'Failed to save sensor data', 
+      details: error.message 
+    });
+  }
+});
 
 
 app.use((req, res) => {
