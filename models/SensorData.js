@@ -1,4 +1,6 @@
-// models/SensorData.js
+const { DataTypes } = require('sequelize');
+const sequelize = require('../sequelize');
+
 const SensorData = sequelize.define('SensorData', {
   applianceId: {
     type: DataTypes.INTEGER,
@@ -54,3 +56,5 @@ const SensorData = sequelize.define('SensorData', {
   tableName: 'SensorData',
   timestamps: true // adds createdAt, updatedAt
 });
+
+module.exports = SensorData;
