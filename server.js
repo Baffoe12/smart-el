@@ -576,43 +576,11 @@ app.post('/api/thresholds', async (req, res) => {
   }
 });
 
-// Receive sensor data from ESP32
 app.post('/api/sensor-data', async (req, res) => {
-  try {
-    const { device_id, timestamp, relays, total } = req.body;
-
-    // ✅ Validate required fields
-    if (!device_id || !Array.isArray(relays) || !total || !timestamp) {
-      return res.status(400).json({ 
-        error: 'Missing required fields', 
-        details: 'Must include device_id, timestamp, relays[], and total' 
-      });
-    }
-
-    // ✅ Save each relay's sensor data
-    for (const relay of relays) {
-      await SensorData.create({
-        deviceId: device_id,
-        relayId: relay.id,
-        current: relay.current,
-        power: relay.power,
-        energyKwh: relay.energy_kwh,
-        costGhs: relay.cost_ghs,
-        timestamp: new Date(timestamp)
-      });
-    }
-
-    console.log(`✅ Sensor data saved from ${device_id}, ${relays.length} relays`);
-    res.status(201).json({ message: 'Sensor data received successfully' });
-
-  } catch (error) {
-    console.error('Error saving sensor data:', error);
-    res.status(500).json({ 
-      error: 'Failed to save sensor data', 
-      details: error.message 
-    });
-  }
+  // TODO: Implement sensor data handling logic here
+  res.status(501).json({ error: 'Not implemented' });
 });
+
 // Cancel/delete appliance schedule
 // ✅ Add this route to cancel a schedule
 app.delete('/api/appliances/:id/schedule', async (req, res) => {
@@ -647,6 +615,7 @@ app.delete('/api/appliances/:id/schedule', async (req, res) => {
     });
   }
 });
+
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Endpoint not found',

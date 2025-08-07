@@ -1,7 +1,4 @@
 // models/SensorData.js
-const { DataTypes } = require('sequelize');
-const sequelize = require('../sequelize');
-
 const SensorData = sequelize.define('SensorData', {
   applianceId: {
     type: DataTypes.INTEGER,
@@ -41,10 +38,19 @@ const SensorData = sequelize.define('SensorData', {
   voltage: {
     type: DataTypes.FLOAT,
     defaultValue: 230.0
+  },
+  // ✅ Add this:
+  timestamp: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
+  // Optional: track device ID
+  deviceId: {
+    type: DataTypes.STRING,
+    allowNull: true // or false if required
   }
 }, {
   tableName: 'SensorData',
-  timestamps: true
+  timestamps: true // adds createdAt, updatedAt
 });
-
-module.exports = SensorData;

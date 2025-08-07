@@ -2,11 +2,6 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../sequelize');
 
 const Appliance = sequelize.define('Appliance', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
   type: {
     type: DataTypes.STRING,
     allowNull: false
@@ -43,18 +38,18 @@ const Appliance = sequelize.define('Appliance', {
   scheduleOff: {
     type: DataTypes.DATE,
     allowNull: true
-  },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  },
-  updatedAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'Appliances',
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['scheduled', 'scheduleOn'] // Useful for querying active schedules
+    },
+    {
+      fields: ['type']
+    }
+  ]
 });
 
 module.exports = Appliance;
