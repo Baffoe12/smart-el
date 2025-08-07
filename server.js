@@ -286,8 +286,9 @@ app.post('/api/appliances', async (req, res) => {
   applianceId: newAppliance.id
 });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to add appliance' });
-  }
+  console.error('Add appliance error details:', err); // 🔥 Add this
+  res.status(500).json({ error: 'Failed to add appliance' });
+}
 });
 
 // Update appliance status or data
