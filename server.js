@@ -281,8 +281,10 @@ app.post('/api/appliances', async (req, res) => {
     return res.status(400).json({ error: 'Appliance type is required' });
   }
   try {
-    const newAppliance = await Appliance.create({ type, relay });
-    res.status(201).json(newAppliance);
+    res.status(201).json({
+  ...newAppliance.toJSON(),
+  applianceId: newAppliance.id
+});
   } catch (err) {
     res.status(500).json({ error: 'Failed to add appliance' });
   }
@@ -303,34 +305,28 @@ app.put('/api/appliances/:id', async (req, res) => {
   }
 });
 
-// Delete appliance
-app.delete('/api/appliances/:id', async (req, res) => {
-  const id = req.params.id;
+app.delete('/api/appliances/:id/schedule', async (req, res) => {
+  const { id } = req.params;
   try {
     const appliance = await Appliance.findByPk(id);
     if (!appliance) {
       return res.status(404).json({ error: 'Appliance not found' });
     }
-    await appliance.destroy();
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete appliance' });
-  }
-});
-
-app.get('/api/sensor-data/latest', async (req, res) => {
-  try {
-    // Mock data for now, replace with actual database call
-    // Ensure you have a model or logic to fetch the latest reading
-    // Example mock response:
+    await appliance.update({
+      scheduled: false,
+      scheduleOn: null,
+      scheduleOff: null
+    });
     res.json({
-      energy: (Math.random() * 2 + 0.5).toFixed(3), // e.g., "1.234"
-      timestamp: new Date().toISOString(),
-      // Add other relevant fields if your frontend expects them
+      message: 'Schedule cancelled successfully',
+      appliance: {
+        ...appliance.toJSON(),
+        applianceId: appliance.id
+      }
     });
   } catch (error) {
-    console.error('Error fetching latest sensor data:', error);
-    res.status(500).json({ error: 'Failed to fetch latest sensor data' });
+    console.error('Error cancelling schedule:', error);
+    res.status(500).json({ error: 'Failed to cancel schedule' });
   }
 });
 
@@ -407,13 +403,11 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       }, delayOff);
     }
 
-    res.json({ 
+    res.json({
       message: 'Schedule updated and relay commands scheduled',
       appliance: {
-        id: appliance.id,
-        scheduled: appliance.scheduled,
-        scheduleOn: appliance.scheduleOn,
-        scheduleOff: appliance.scheduleOff
+        ...appliance.toJSON(),
+        applianceId: appliance.id
       }
     });
 
@@ -500,7 +494,7 @@ app.post('/api/appliances/:id/control', async (req, res) => {
   }
 });
 
-// Update appliance relay status
+// Update appliance relay status - UPDATED to include applianceId in response
 app.put('/api/appliances/:id/relay', async (req, res) => {
   const id = req.params.id;
   const { isOn } = req.body;
@@ -513,7 +507,10 @@ app.put('/api/appliances/:id/relay', async (req, res) => {
       return res.status(404).json({ error: 'Appliance not found' });
     }
     await appliance.update({ isOn });
-    res.json(appliance);
+    res.json({
+      ...appliance.toJSON(),
+      applianceId: appliance.id
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update appliance relay status' });
   }
@@ -609,8 +606,40 @@ app.post('/api/sensor-data', async (req, res) => {
     });
   }
 });
+// Cancel/delete appliance schedule
+// ✅ Add this route to cancel a schedule
+app.delete('/api/appliances/:id/schedule', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ 
+        error: 'Appliance not found' 
+      });
+    }
 
+    // Clear the schedule
+    await appliance.update({
+      scheduled: false,
+      scheduleOn: null,
+      scheduleOff: null
+    });
+
+    res.json({
+      message: 'Schedule cancelled successfully',
+      appliance: {
+        ...appliance.toJSON(),
+        applianceId: appliance.id  // Keep consistent with frontend
+      }
+    });
+  } catch (error) {
+    console.error('Error cancelling schedule:', error);
+    res.status(500).json({ 
+      error: 'Failed to cancel schedule' 
+    });
+  }
+});
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Endpoint not found',
