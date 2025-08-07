@@ -274,6 +274,8 @@ app.get('/api/appliances', async (req, res) => {
   }
 });
 
+// ...existing code...
+
 // Add new appliance
 app.post('/api/appliances', async (req, res) => {
   const { type, relay } = req.body;
@@ -281,15 +283,19 @@ app.post('/api/appliances', async (req, res) => {
     return res.status(400).json({ error: 'Appliance type is required' });
   }
   try {
+    // Create the appliance in the database
+    const newAppliance = await Appliance.create({ type, relay });
     res.status(201).json({
-  ...newAppliance.toJSON(),
-  applianceId: newAppliance.id
-});
+      ...newAppliance.toJSON(),
+      applianceId: newAppliance.id
+    });
   } catch (err) {
-  console.error('Add appliance error details:', err); // 🔥 Add this
-  res.status(500).json({ error: 'Failed to add appliance' });
-}
+    console.error('Add appliance error details:', err);
+    res.status(500).json({ error: 'Failed to add appliance' });
+  }
 });
+
+//
 
 // Update appliance status or data
 app.put('/api/appliances/:id', async (req, res) => {
