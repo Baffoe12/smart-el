@@ -446,6 +446,40 @@ app.get('/api/appliances/:id/schedule', async (req, res) => {
   }
 });
 
+// Delete appliance endpoint - FIX for "could not remove appliance" error
+app.delete('/api/appliances/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  
+  try {
+    await sequelize.transaction(async (t) => {
+      // Delete related sensor data first
+      await SensorData.destroy({
+        where: { applianceId: id },
+        transaction: t
+      });
+      
+      // Then delete the appliance
+      const deleted = await Appliance.destroy({
+        where: { id },
+        transaction: t
+      });
+      
+      if (deleted === 0) {
+        return res.status(404).json({ error: 'Appliance not found' });
+      }
+      
+      res.json({ message: 'Appliance deleted successfully' });
+    });
+    
+  } catch (error) {
+    console.error('Delete appliance error:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete appliance',
+      details: error.message 
+    });
+  }
+});
+
 // Power cut command endpoint
 app.post('/api/appliances/:id/power-cut', async (req, res) => {
   const id = req.params.id;
