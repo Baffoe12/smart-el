@@ -3,6 +3,10 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Appliance = sequelize.define('Appliance', {
+    name: {  // ✅ Add this field
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     type: {
       type: DataTypes.STRING,
       allowNull: false
