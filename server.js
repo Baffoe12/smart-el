@@ -499,42 +499,69 @@ app.post('/api/appliances/:id/power-cut', async (req, res) => {
 
 // Get historical power and cost data for an appliance
 app.get('/api/appliances/:id/history', async (req, res) => {
-  const id = req.params.id;
+  const { id } = req.params;
+  const { range = '7d' } = req.query; // e.g., 1d, 7d, 30d
+
+  const hours = {
+    '1d': 24,
+    '7d': 168,
+    '30d': 720
+  }[range] || 24;
+
   try {
-    // Placeholder: fetch historical data from database or other source
-    // Example response format: [{ timestamp: '2024-01-01T00:00:00Z', power: 100, cost: 5 }, ...]
-    const history = [
-      { timestamp: '2024-01-01T00:00:00Z', power: 100, cost: 5 },
-      { timestamp: '2024-01-02T00:00:00Z', power: 110, cost: 5.5 },
-      { timestamp: '2024-01-03T00:00:00Z', power: 90, cost: 4.5 },
-    ];
-    res.json(history);
+    const data = await SensorData.findAll({
+      where: {
+        applianceId: id,
+        timestamp: { [Op.gte]: new Date(Date.now() - hours * 60 * 60 * 1000) }
+      },
+      attributes: ['timestamp', 'power', 'energy', 'cost'],
+      order: [['timestamp', 'ASC']]
+    });
+
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch historical data' });
+    res.status(500).json({ error: 'Failed to fetch history' });
   }
 });
 
-// Control appliance on/off
 app.post('/api/appliances/:id/control', async (req, res) => {
-  const id = req.params.id;
-  const { action } = req.body; // expected 'on' or 'off'
+  const { id } = req.params;
+  const { action } = req.body;
+
   if (!['on', 'off'].includes(action)) {
-    return res.status(400).json({ error: 'Invalid action' });
+    return res.status(400).json({ error: 'Invalid action. Use "on" or "off"' });
   }
+
   try {
     const appliance = await Appliance.findByPk(id);
     if (!appliance) {
       return res.status(404).json({ error: 'Appliance not found' });
     }
-    // Simulate control action, e.g., send command to device or relay
-    console.log(`Control command received for appliance ID: ${id}, action: ${action}`);
-    // Here you can add code to send command to the relay hardware if applicable
-    res.json({ message: `Appliance ${id} turned ${action}` });
+
+    // Update database
+    appliance.status = action;
+    await appliance.save();
+
+    // 🔔 FORWARD COMMAND TO ESP32
+    const ESP32_IP = '172.20.10.3'; // Or store in appliance model
+    const relayNumber = appliance.relayNumber || parseInt(id); // e.g., Appliance 1 → Relay 1
+    const state = action === 'on' ? 1 : 0;
+
+    try {
+      const url = `http://${ESP32_IP}/relay?relay=${relayNumber}&state=${state}`;
+      console.log(`Forwarding to ESP32: ${url}`);
+      await axios.get(url, { timeout: 5000 });
+      console.log(`✅ Relay ${relayNumber} turned ${action}`);
+    } catch (err) {
+      console.error(`❌ Failed to reach ESP32:`, err.message);
+      // Don't fail the API — just log warning
+    }
+
+    res.json({ message: `Appliance turned ${action}`, appliance });
   } catch (err) {
     res.status(500).json({ error: 'Failed to control appliance' });
   }
 });
-
 // Update appliance relay status - UPDATED to include applianceId in response
 app.put('/api/appliances/:id/relay', async (req, res) => {
   const id = req.params.id;
@@ -554,6 +581,55 @@ app.put('/api/appliances/:id/relay', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update appliance relay status' });
+  }
+});
+
+app.get('/api/sensor-data/latest', async (req, res) => {
+  try {
+    const latest = await SensorData.findAll({
+      where: { timestamp: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+      order: [['timestamp', 'DESC']],
+      limit: 4
+    });
+    res.json(latest);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch latest data' });
+  }
+});
+// Add this to your server.js or routes file
+
+app.get('/api/sensor-data/latest', async (req, res) => {
+  try {
+    // Step 1: Get the latest entry for each applianceId
+    const latestEntries = await SensorData.findAll({
+      attributes: [
+        'applianceId',
+        [sequelize.fn('MAX', sequelize.col('timestamp')), 'maxTimestamp']
+      ],
+      group: ['applianceId'],
+      raw: true
+    });
+
+    if (latestEntries.length === 0) {
+      return res.json([]);
+    }
+
+    // Step 2: Extract the latest timestamps
+    const maxTimestamps = latestEntries.map(entry => entry.maxTimestamp);
+
+    // Step 3: Fetch full records using the latest timestamps
+    const latestData = await SensorData.findAll({
+      where: {
+        timestamp: { [Op.in]: maxTimestamps }
+      },
+      order: [['applianceId', 'ASC']]
+    });
+
+    // Step 4: Send response
+    res.json(latestData);
+  } catch (err) {
+    console.error('Error fetching latest sensor data:', err);
+    res.status(500).json({ error: 'Failed to fetch latest sensor data' });
   }
 });
 
@@ -594,27 +670,35 @@ app.get('/api/thresholds', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch thresholds' });
   }
 });
-
-// Set custom thresholds
-app.post('/api/thresholds', async (req, res) => {
-  const { power } = req.body;
-  if (typeof power !== 'number') {
-    return res.status(400).json({ error: 'Invalid power threshold' });
-  }
-  try {
-    // Placeholder: save thresholds to database or config
-    console.log(`Custom power threshold set to ${power}`);
-    res.json({ message: 'Threshold updated' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update thresholds' });
-  }
-});
-
 app.post('/api/sensor-data', async (req, res) => {
-  // TODO: Implement sensor data handling logic here
-  res.status(501).json({ error: 'Not implemented' });
-});
+  const { device_id, timestamp, relays, total } = req.body;
 
+  if (!relays || !Array.isArray(relays)) {
+    return res.status(400).json({ error: 'Missing or invalid "relays" array' });
+  }
+
+  try {
+    const sensorRecords = relays.map(r => ({
+      applianceId: r.id,
+      current: r.current,
+      voltage: 230,
+      power: r.power,
+      energy: r.energy_kwh,
+      cost: r.cost_ghs,
+      timestamp: new Date(timestamp || Date.now()),
+      deviceId: device_id
+    }));
+
+    // ✅ This line saves the data
+    await SensorData.bulkCreate(sensorRecords);
+
+    console.log(`✅ Saved ${relays.length} records from device: ${device_id}`);
+    res.status(201).json({ message: 'Sensor data saved successfully' });
+  } catch (err) {
+    console.error('❌ Failed to save sensor data:', err);
+    res.status(500).json({ error: 'Failed to save sensor data' });
+  }
+});
 // Cancel/delete appliance schedule
 // ✅ Add this route to cancel a schedule
 app.delete('/api/appliances/:id/schedule', async (req, res) => {

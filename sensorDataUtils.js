@@ -1,6 +1,5 @@
-// sensorDataEndpoint.js - Converted to utility module
-// This file now contains only utility functions for data processing
-// Route definitions have been moved to server.js
+// sensorDataUtils.js - Utility module for sensor data processing
+// This replaces sensorDataEndpoint.js as a utility module
 
 const { Appliance, SensorData, sequelize } = require('./models');
 const { Sequelize } = require('sequelize');
@@ -9,13 +8,13 @@ const Op = Sequelize.Op;
 // === Helper: Parse Text Format (e.g., Serial Monitor Output) ===
 function parseEspData(data) {
   if (typeof data !== 'string') return { relays: [], total: {} };
-  const lines = data.split('\\n');
+  const lines = data.split('\n');
   const relays = [];
   let total = { energy_kwh: 0, cost_ghs: 0 };
 
   for (const line of lines) {
     // Match: "Relay 1: ON  - 0.50A | 115W | 0.001 kWh | 0.00 Ghs"
-    const relayMatch = line.match(/Relay\\s+(\\d+):\\s+(ON|OFF)\\s*-\\s*([0-9.]+)A\\s*\\|\\s*([0-9.]+)W\\s*\\|\\s*([0-9.]+)\\s*kWh\\s*\\|\\s*([0-9.]+)\\s*Ghs/);
+    const relayMatch = line.match(/Relay\s+(\d+):\s+(ON|OFF)\s*-\s*([0-9.]+)A\s*\|\s*([0-9.]+)W\s*\|\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
     if (relayMatch) {
       relays.push({
         id: parseInt(relayMatch[1]),
@@ -28,7 +27,7 @@ function parseEspData(data) {
     }
 
     // Match: "TOTAL: 0.013 kWh | 0.02 Ghs"
-    const totalMatch = line.match(/TOTAL:\\s*([0-9.]+)\\s*kWh\\s*\\|\\s*([0-9.]+)\\s*Ghs/);
+    const totalMatch = line.match(/TOTAL:\s*([0-9.]+)\s*kWh\s*\|\s*([0-9.]+)\s*Ghs/);
     if (totalMatch) {
       total.energy_kwh = parseFloat(totalMatch[1]);
       total.cost_ghs = parseFloat(totalMatch[2]);
@@ -128,32 +127,3 @@ async function getPaginatedSensorData(query) {
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const { count, rows } = await SensorData.findAndCountAll({
-    where,
-    order: [['createdAt', 'DESC']],
-    limit: parseInt(limit),
-    offset,
-    distinct: true
-  });
-
-  const totalPages = Math.ceil(count / limit);
-
-  return {
-    data: rows,
-    pagination: {
-      currentPage: parseInt(page),
-      totalPages,
-      totalRecords: count,
-      hasNextPage: parseInt(page) < totalPages,
-      hasPrevPage: parseInt(page) > 1
-    }
-  };
-}
-
-// Export utility functions
-module.exports = {
-  parseEspData,
-  processSensorDataJSON,
-  processSensorDataText,
-  getLatestSensorData,
-  getPaginatedSensorData
-};
