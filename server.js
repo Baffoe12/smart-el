@@ -596,42 +596,6 @@ app.get('/api/sensor-data/latest', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch latest data' });
   }
 });
-// Add this to your server.js or routes file
-
-app.get('/api/sensor-data/latest', async (req, res) => {
-  try {
-    // Step 1: Get the latest entry for each applianceId
-    const latestEntries = await SensorData.findAll({
-      attributes: [
-        'applianceId',
-        [sequelize.fn('MAX', sequelize.col('timestamp')), 'maxTimestamp']
-      ],
-      group: ['applianceId'],
-      raw: true
-    });
-
-    if (latestEntries.length === 0) {
-      return res.json([]);
-    }
-
-    // Step 2: Extract the latest timestamps
-    const maxTimestamps = latestEntries.map(entry => entry.maxTimestamp);
-
-    // Step 3: Fetch full records using the latest timestamps
-    const latestData = await SensorData.findAll({
-      where: {
-        timestamp: { [Op.in]: maxTimestamps }
-      },
-      order: [['applianceId', 'ASC']]
-    });
-
-    // Step 4: Send response
-    res.json(latestData);
-  } catch (err) {
-    console.error('Error fetching latest sensor data:', err);
-    res.status(500).json({ error: 'Failed to fetch latest sensor data' });
-  }
-});
 
 // Get anomaly detection details and logs
 app.get('/api/anomalies', async (req, res) => {
