@@ -6,7 +6,8 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const { Op, sequelize } = require('sequelize');
+const { Op } = require('sequelize');
+const { sequelize, User, Appliance, SensorData } = require('./models');
 
 // Import models
 const { User, Appliance, SensorData } = require('./models');
