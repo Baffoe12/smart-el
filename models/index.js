@@ -1,16 +1,8 @@
-const sequelize = require('../sequelize');
-const User = require('./User');
-const Appliance = require('./Appliance');
-const SensorData = require('./SensorData');
+const { Sequelize } = require('sequelize');
+const sequelize = new Sequelize(process.env.DATABASE_URL || 'sqlite:database.sqlite');
 
-// Define associations
-Appliance.hasMany(SensorData, { foreignKey: 'applianceId', as: 'SensorData' });
-SensorData.belongsTo(Appliance, { foreignKey: 'applianceId' });
+const User = require('./User')(sequelize);
+const Appliance = require('./Appliance')(sequelize);
+const SensorData = require('./SensorData')(sequelize);
 
-// Export models and sequelize instance
-module.exports = {
-  sequelize,
-  User,
-  Appliance,
-  SensorData
-};
+module.exports = { sequelize, User, Appliance, SensorData };
