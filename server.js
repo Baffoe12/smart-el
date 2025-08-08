@@ -9,8 +9,7 @@ const axios = require('axios');
 const { Op } = require('sequelize');
 const { sequelize, User, Appliance, SensorData } = require('./models');
 
-// Import models
-const { User, Appliance, SensorData } = require('./models');
+// Models are already imported above with the sequelize instance
 
 // Set your ESP32/relay board IP here
 const DEVICE_IP = '172.20.10.3'; // ← Change to your actual device IP

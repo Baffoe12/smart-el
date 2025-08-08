@@ -1,20 +1,17 @@
 // models/index.js
 const { Sequelize } = require('sequelize');
 
-// Create sequelize instance
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
-  protocol: 'postgres',
   dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false // Important for Render
+      rejectUnauthorized: false
     }
   },
   logging: false
 });
 
-// Define models
 const User = sequelize.define('User', {
   name: { type: Sequelize.STRING },
   email: { type: Sequelize.STRING, unique: true },
@@ -22,24 +19,20 @@ const User = sequelize.define('User', {
 });
 
 const Appliance = sequelize.define('Appliance', {
-  type: { type: Sequelize.STRING },
-  relay: { type: Sequelize.INTEGER },
-  status: { type: Sequelize.STRING, defaultValue: 'off' },
-  scheduled: { type: Sequelize.BOOLEAN, defaultValue: false },
-  scheduleOn: { type: Sequelize.DATE },
-  scheduleOff: { type: Sequelize.DATE }
+  type: Sequelize.STRING,
+  relay: Sequelize.INTEGER,
+  status: { type: Sequelize.STRING, defaultValue: 'off' }
 });
 
 const SensorData = sequelize.define('SensorData', {
-  applianceId: { type: Sequelize.INTEGER },
-  current: { type: Sequelize.FLOAT },
-  voltage: { type: Sequelize.FLOAT },
-  power: { type: Sequelize.FLOAT },
-  energy: { type: Sequelize.FLOAT },
-  cost: { type: Sequelize.FLOAT },
-  timestamp: { type: Sequelize.DATE },
-  deviceId: { type: Sequelize.STRING }
+  applianceId: Sequelize.INTEGER,
+  current: Sequelize.FLOAT,
+  voltage: { type: Sequelize.FLOAT, defaultValue: 230 },
+  power: Sequelize.FLOAT,
+  energy: Sequelize.FLOAT,
+  cost: Sequelize.FLOAT,
+  timestamp: { type: Sequelize.DATE, defaultValue: Sequelize.NOW },
+  deviceId: Sequelize.STRING
 });
 
-// Export all
 module.exports = { sequelize, User, Appliance, SensorData };
