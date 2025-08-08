@@ -1,14 +1,14 @@
 // models/index.js
 const { Sequelize } = require('sequelize');
 
-// Initialize Sequelize with Render's DATABASE_URL
+// Create sequelize instance
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   protocol: 'postgres',
   dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false
+      rejectUnauthorized: false // Important for Render
     }
   },
   logging: false
@@ -41,5 +41,5 @@ const SensorData = sequelize.define('SensorData', {
   deviceId: { type: Sequelize.STRING }
 });
 
-// Sync will create tables
+// Export all
 module.exports = { sequelize, User, Appliance, SensorData };
