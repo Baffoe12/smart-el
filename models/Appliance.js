@@ -1,55 +1,34 @@
+// models/Appliance.js
 const { DataTypes } = require('sequelize');
-const sequelize = require('../sequelize');
 
-const Appliance = sequelize.define('Appliance', {
-  type: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  relay: {
-    type: DataTypes.INTEGER,
-    allowNull: true
-  },
-  isOn: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
-  },
-  current: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0.0
-  },
-  power: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0.0
-  },
-  amount: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0.0,
-    field: 'cost_ghs'
-  },
-  scheduled: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
-  },
-  scheduleOn: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  scheduleOff: {
-    type: DataTypes.DATE,
-    allowNull: true
-  }
-}, {
-  tableName: 'Appliances',
-  timestamps: true,
-  indexes: [
-    {
-      fields: ['scheduled', 'scheduleOn'] // Useful for querying active schedules
+module.exports = (sequelize) => {
+  const Appliance = sequelize.define('Appliance', {
+    type: {
+      type: DataTypes.STRING,
+      allowNull: false
     },
-    {
-      fields: ['type']
+    relay: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    status: {
+      type: DataTypes.STRING,
+      defaultValue: 'off'
+    },
+    scheduled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false
+    },
+    scheduleOn: {
+      type: DataTypes.DATE
+    },
+    scheduleOff: {
+      type: DataTypes.DATE
     }
-  ]
-});
+  }, {
+    tableName: 'Appliances',
+    timestamps: true
+  });
 
-module.exports = Appliance;
+  return Appliance;
+};
