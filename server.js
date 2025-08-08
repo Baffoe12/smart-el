@@ -38,6 +38,22 @@ app.post('/api/sensor-data', async (req, res) => {
   }
 
   try {
+    // ✅ Pre-create appliances if they don't exist
+    const applianceIds = relays.map(r => r.id);
+    for (const id of applianceIds) {
+      await Appliance.findOrCreate({
+        where: { id },
+        defaults: {
+          type: `Relay ${id}`,
+          relay: id,
+          name: `Socket ${id}`,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+    }
+
+    // ✅ Now create sensor data
     const records = relays.map(r => ({
       applianceId: r.id,
       current: r.current,
