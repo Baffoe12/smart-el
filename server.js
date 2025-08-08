@@ -29,8 +29,47 @@ app.use((req, res, next) => {
 });
 
 // === SENSOR DATA ENDPOINTS ===
+app.post('/api/sensor-data', async (req, res) => {
+  const { device_id, timestamp, relays } = req.body;
 
-v
+  if (!relays || !Array.isArray(relays)) {
+    return res.status(400).json({ error: 'Invalid or missing relays array' });
+  }
+
+  try {
+    // ✅ Ensure appliances exist
+    for (const r of relays) {
+      await Appliance.findOrCreate({
+        where: { id: r.id },
+        defaults: {
+          name: `Relay ${r.id}`,
+          type: `Type ${r.id}`,
+          relay: r.id,
+          status: 'unknown'
+        }
+      });
+    }
+
+    const records = relays.map(r => ({
+      applianceId: r.id,
+      current: r.current,
+      voltage: 230,
+      power: r.power,
+      energy: r.energy_kwh,
+      cost: r.cost_ghs,
+      timestamp: new Date(timestamp || Date.now()),
+      deviceId: device_id
+    }));
+
+    await SensorData.bulkCreate(records);
+    res.status(201).json({ message: 'Data saved' });
+  } catch (err) {
+    console.error('Save error:', err);
+    res.status(500).json({ error: 'Failed to save data' });
+  }
+});
+
+
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
     const latest = await SensorData.findAll({
