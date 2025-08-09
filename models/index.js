@@ -19,11 +19,11 @@ const User = sequelize.define('User', {
 });
 
 const Appliance = sequelize.define('Appliance', {
+  name: { type: Sequelize.STRING }, // Add this
   type: Sequelize.STRING,
   relay: Sequelize.INTEGER,
   status: { type: Sequelize.STRING, defaultValue: 'off' }
 });
-
 const SensorData = sequelize.define('SensorData', {
   applianceId: Sequelize.INTEGER,
   current: Sequelize.FLOAT,
