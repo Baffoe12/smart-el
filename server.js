@@ -45,19 +45,21 @@ app.post('/api/sensor-data', async (req, res) => {
 
   try {
     // ✅ Ensure appliances exist
-    for (const r of relays) {
-      console.log('🔍 Ensuring appliance:', r.id); // 👈 LOG
-      await Appliance.findOrCreate({
-        where: { id: r.id },
-        defaults: {
-          name: `Relay ${r.id}`,
-          type: `Type ${r.id}`,
-          relay: r.id,
-          status: 'unknown'
-        }
-      });
+   // Optional: Only create appliance if it doesn't exist
+// Remove this block if you want manual control only
+/*
+for (const r of relays) {
+  await Appliance.findOrCreate({
+    where: { id: r.id },
+    defaults: {
+      name: `Relay ${r.id}`,
+      type: `Type ${r.id}`,
+      relay: r.id,
+      status: 'unknown'
     }
-
+  });
+}
+*/
    const records = relays.map(r => {
   const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
   const date = new Date(validTimestamp);
