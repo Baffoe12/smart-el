@@ -58,21 +58,30 @@ app.post('/api/sensor-data', async (req, res) => {
       });
     }
 
-    const records = relays.map(r => {
-      const record = {
-        applianceId: r.id,
-        current: r.current,
-        voltage: 230,
-        power: r.power,
-        energy: r.energy_kwh,
-        cost: r.cost_ghs,
-        timestamp: new Date(timestamp || Date.now()),
-        deviceId: device_id
-      };
-      console.log('📝 Sensor record to save:', record); // 👈 LOG EACH RECORD
-      return record;
-    });
+   const records = relays.map(r => {
+  const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
+  const date = new Date(validTimestamp);
 
+  // Optional: Validate date (recommended)
+  if (isNaN(date.getTime())) {
+    console.warn('Invalid timestamp for relay:', r);
+    return null; // Will be filtered out below
+  }
+
+  const record = {
+    applianceId: parseInt(r.id, 10), // Ensure ID is number
+    current: r.current,
+    voltage: 230,
+    power: r.power,
+    energy: r.energy_kwh,
+    cost: r.cost_ghs,
+    timestamp: date,
+    deviceId: device_id
+  };
+
+  console.log('📝 Sensor record to save:', record);
+  return record;
+}).filter(record => record !== null); // Remove any nulls if timestamp was invalid
     const result = await SensorData.bulkCreate(records);
     console.log('✅ Saved to DB:', result.map(r => r.toJSON())); // 👈 LOG SUCCESS
 
