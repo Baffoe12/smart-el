@@ -33,7 +33,7 @@ app.use((req, res, next) => {
 });
 
 app.post('/api/sensor-data', async (req, res) => {
-  console.log('📥 RAW Body:', req.body); // 👈 LOG RAW INPUT
+  console.log('📥 RAW Body:', req.body);
 
   const { device_id, timestamp, relays } = req.body;
 
@@ -41,59 +41,61 @@ app.post('/api/sensor-data', async (req, res) => {
     return res.status(400).json({ error: 'Invalid or missing relays array' });
   }
 
-  console.log('📦 Parsed relays:', relays); // 👈 LOG RELAYS
+  console.log('📦 Parsed relays:', relays);
 
   try {
-    // ✅ Ensure appliances exist
-   // Optional: Only create appliance if it doesn't exist
-// Remove this block if you want manual control only
-/*
-for (const r of relays) {
-  await Appliance.findOrCreate({
-    where: { id: r.id },
-    defaults: {
-      name: `Relay ${r.id}`,
-      type: `Type ${r.id}`,
-      relay: r.id,
-      status: 'unknown'
+    // ✅ Ensure appliances exist before creating sensor data
+    for (const r of relays) {
+      await Appliance.findOrCreate({
+        where: { id: parseInt(r.id, 10) },
+        defaults: {
+          name: `Relay ${r.id}`,
+          type: `Type ${r.id}`,
+          relay: parseInt(r.id, 10),
+          status: 'off'
+        }
+      });
     }
-  });
-}
-*/
+
    const records = relays.map(r => {
   const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
   const date = new Date(validTimestamp);
 
-  // Optional: Validate date (recommended)
   if (isNaN(date.getTime())) {
     console.warn('Invalid timestamp for relay:', r);
-    return null; // Will be filtered out below
+    return null;
   }
 
-  const record = {
-    applianceId: parseInt(r.id, 10), // Ensure ID is number
-    current: r.current,
+  return {  // ✅ ADD RETURN HERE
+    applianceId: parseInt(r.id, 10),
+    current: r.current || 0,
     voltage: 230,
-    power: r.power,
-    energy: r.energy_kwh,
-    cost: r.cost_ghs,
+    power: r.power || 0,
+    energy: r.energy_kwh || 0,
+    cost: r.cost_ghs || 0,
     timestamp: date,
-    deviceId: device_id
+    deviceId: device_id,
+    createdAt: new Date(),
+    updatedAt: new Date()
   };
-
-  console.log('📝 Sensor record to save:', record);
-  return record;
-}).filter(record => record !== null); // Remove any nulls if timestamp was invalid
-    const result = await SensorData.bulkCreate(records);
-    console.log('✅ Saved to DB:', result.map(r => r.toJSON())); // 👈 LOG SUCCESS
-
-    res.status(201).json({ message: 'Data saved', count: result.length });
-  } catch (err) {
-    console.error('❌ FULL ERROR:', err); // 👈 LOG FULL ERROR
-    console.error('❌ ERROR Stack:', err.stack);
-    res.status(500).json({ error: 'Failed to save data', details: err.message });
-  }
 });
+          // Filter out any null records due to invalid timestamps
+          const validRecords = records.filter(r => r !== null);
+      
+          if (validRecords.length === 0) {
+            return res.status(400).json({ error: 'No valid sensor data records' });
+          }
+      
+          // Bulk create sensor data
+          await SensorData.bulkCreate(validRecords);
+      
+          res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
+        } catch (err) {
+          console.error('Sensor data save error:', err);
+          res.status(500).json({ error: 'Failed to save sensor data' });
+        }
+      });
+
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
     const latest = await SensorData.findAll({
@@ -423,15 +425,45 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// === START SERVER ===
-sequelize.authenticate()
-  .then(() => console.log('✅ DB Connected'))
-  .catch(err => console.error('❌ DB Error:', err));
+// ✅ NEW — SAFE, SEQUENTIAL STARTUP
+async function startServer() {
+  try {
+    // 1. Connect to DB
+    await sequelize.authenticate();
+    console.log('✅ Database connected');
 
-sequelize.sync({ alter: true })
-  .then(() => console.log('✅ Models synced'))
-  .catch(err => console.error('❌ Sync error:', err));
+    // 2. Sync models
+    await sequelize.sync({ alter: true });  // or { force: false }
+    console.log('✅ Models synced');
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${port}`);
-});
+    // 3. (Optional) Pre-create default appliances
+    const defaultAppliances = [
+      { id: 1, name: 'Air Conditioner', type: 'Cooling', relay: 1, status: 'off' },
+      { id: 2, name: 'Refrigerator',    type: 'Cooling', relay: 2, status: 'off' },
+      { id: 3, name: 'Washing Machine', type: 'Laundry', relay: 3, status: 'off' },
+      { id: 4, name: 'Microwave',       type: 'Cooking', relay: 4, status: 'off' }
+    ];
+
+    for (const appliance of defaultAppliances) {
+      const [record, created] = await Appliance.findOrCreate({
+        where: { id: appliance.id },
+        defaults: appliance
+      });
+      if (created) {
+        console.log(`🆕 Created Appliance ${record.id}: ${record.name}`);
+      }
+    }
+
+    // 4. Start server
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 Server running on port ${port}`);
+    });
+
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
