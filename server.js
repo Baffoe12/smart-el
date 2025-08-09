@@ -121,14 +121,38 @@ app.get('/api/sensor-data/latest', async (req, res) => {
 });
 
 app.get('/api/sensor-data', async (req, res) => {
-  const { limit = 100 } = req.query;
+  const { limit = 100, offset = 0, deviceId, startDate, endDate } = req.query;
+  
   try {
+    const whereClause = {};
+    
+    if (deviceId) whereClause.deviceId = deviceId;
+    if (startDate || endDate) {
+      whereClause.timestamp = {};
+      if (startDate) whereClause.timestamp[Op.gte] = new Date(startDate);
+      if (endDate) whereClause.timestamp[Op.lte] = new Date(endDate);
+    }
+
     const data = await SensorData.findAll({
-      limit: parseInt(limit),
+      where: whereClause,
+      limit: Math.min(parseInt(limit), 1000), // Max 1000 records
+      offset: parseInt(offset),
       order: [['timestamp', 'DESC']]
     });
-    res.json(data);
+    
+    const total = await SensorData.count({ where: whereClause });
+    
+    res.json({
+      data,
+      pagination: {
+        total,
+        limit: Math.min(parseInt(limit), 1000),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + data.length < total
+      }
+    });
   } catch (err) {
+    console.error('Sensor data fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch sensor data' });
   }
 });
