@@ -8,12 +8,11 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const { Op } = require('sequelize');
 const { sequelize, User, Appliance, SensorData } = require('./models');
+
 // Set up associations
 Object.values(sequelize.models)
   .filter(model => typeof model.associate === 'function')
   .forEach(model => model.associate(sequelize.models));
-
-// Models are already imported above with the sequelize instance
 
 // Set your ESP32/relay board IP here
 const DEVICE_IP = '172.20.10.3'; // ← Change to your actual device IP
@@ -32,6 +31,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// === SENSOR DATA INGESTION ===
 app.post('/api/sensor-data', async (req, res) => {
   console.log('📥 RAW Body:', req.body);
 
@@ -44,58 +44,62 @@ app.post('/api/sensor-data', async (req, res) => {
   console.log('📦 Parsed relays:', relays);
 
   try {
-    // ✅ Ensure appliances exist before creating sensor data
+    // 🔒 Only accept data if appliance exists AND is not deleted
     for (const r of relays) {
-      await Appliance.findOrCreate({
-        where: { id: parseInt(r.id, 10) },
-        defaults: {
-          name: `Relay ${r.id}`,
-          type: `Type ${r.id}`,
-          relay: parseInt(r.id, 10),
-          status: 'off'
-        }
+      const applianceId = parseInt(r.id, 10);
+      const appliance = await Appliance.findOne({
+        where: { id: applianceId },
+        // { paranoid: false } would include deleted, but we don't want that
       });
+
+      if (!appliance) {
+        console.warn(`❌ Appliance ${applianceId} not found or was deleted — rejecting`);
+        return res.status(400).json({
+          error: `Appliance ${applianceId} not found. Please re-add it manually if needed.`
+        });
+      }
     }
 
-   const records = relays.map(r => {
-  const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
-  const date = new Date(validTimestamp);
+    // Map relays to sensor records
+    const records = relays.map(r => {
+      const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
+      const date = new Date(validTimestamp);
 
-  if (isNaN(date.getTime())) {
-    console.warn('Invalid timestamp for relay:', r);
-    return null;
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid timestamp for relay:', r);
+        return null;
+      }
+
+      return {
+        applianceId: parseInt(r.id, 10),
+        current: r.current || 0,
+        voltage: 230,
+        power: r.power || 0,
+        energy: r.energy_kwh || 0,
+        cost: r.cost_ghs || 0,
+        timestamp: date,
+        deviceId: device_id,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+
+    const validRecords = records.filter(r => r !== null);
+    if (validRecords.length === 0) {
+      return res.status(400).json({ error: 'No valid sensor data records' });
+    }
+
+    console.log(`✅ Inserting ${validRecords.length} sensor data records`);
+    await SensorData.bulkCreate(validRecords);
+
+    res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
+  } catch (err) {
+    console.error('❌ Sensor data save error:', err);
+    res.status(500).json({ error: 'Failed to save sensor data' });
   }
-
-  return {  // ✅ ADD RETURN HERE
-    applianceId: parseInt(r.id, 10),
-    current: r.current || 0,
-    voltage: 230,
-    power: r.power || 0,
-    energy: r.energy_kwh || 0,
-    cost: r.cost_ghs || 0,
-    timestamp: date,
-    deviceId: device_id,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
 });
-          // Filter out any null records due to invalid timestamps
-          const validRecords = records.filter(r => r !== null);
-      
-          if (validRecords.length === 0) {
-            return res.status(400).json({ error: 'No valid sensor data records' });
-          }
-      
-          // Bulk create sensor data
-          await SensorData.bulkCreate(validRecords);
-      
-          res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
-        } catch (err) {
-          console.error('Sensor data save error:', err);
-          res.status(500).json({ error: 'Failed to save sensor data' });
-        }
-      });
 
+// === GET LATEST SENSOR DATA ===
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
     const latest = await SensorData.findAll({
@@ -122,6 +126,7 @@ app.get('/api/sensor-data/latest', async (req, res) => {
   }
 });
 
+// === GET SENSOR DATA WITH PAGINATION ===
 app.get('/api/sensor-data', async (req, res) => {
   const { limit = 100, offset = 0, deviceId, startDate, endDate } = req.query;
   
@@ -137,7 +142,7 @@ app.get('/api/sensor-data', async (req, res) => {
 
     const data = await SensorData.findAll({
       where: whereClause,
-      limit: Math.min(parseInt(limit), 1000), // Max 1000 records
+      limit: Math.min(parseInt(limit), 1000),
       offset: parseInt(offset),
       order: [['timestamp', 'DESC']]
     });
@@ -160,7 +165,6 @@ app.get('/api/sensor-data', async (req, res) => {
 });
 
 // === RELAY CONTROL ===
-
 app.post('/api/relay-control', async (req, res) => {
   const { ip, relay, state } = req.body;
   if (!ip || ![1,2,3,4].includes(relay) || ![0,1].includes(state)) {
@@ -178,7 +182,6 @@ app.post('/api/relay-control', async (req, res) => {
 });
 
 // === AUTH ROUTES ===
-
 app.post('/api/signup', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
@@ -249,44 +252,81 @@ app.get('/api/user', async (req, res) => {
 });
 
 // === APPLIANCES ===
-
 app.get('/api/appliances', async (req, res) => {
   try {
+    // Automatically excludes soft-deleted
     const appliances = await Appliance.findAll();
     res.json(appliances.map(a => ({ ...a.toJSON(), applianceId: a.id })));
   } catch (err) {
+    console.error('Fetch appliances error:', err);
     res.status(500).json({ error: 'Failed to fetch appliances' });
   }
 });
 
 app.post('/api/appliances', async (req, res) => {
-  const { type, relay } = req.body;
-  if (!type) return res.status(400).json({ error: 'Type required' });
+  const { name, type, relay } = req.body;
+  if (!type || !relay) {
+    return res.status(400).json({ error: 'Type and relay are required' });
+  }
 
   try {
-    const appliance = await Appliance.create({ type, relay });
+    const appliance = await Appliance.create({
+      name: name || `Appliance ${relay}`,
+      type,
+      relay,
+      manuallyAdded: true
+    });
     res.status(201).json({ ...appliance.toJSON(), applianceId: appliance.id });
   } catch (err) {
+    console.error('Add appliance error:', err);
     res.status(500).json({ error: 'Add failed' });
   }
 });
 
+// DELETE - Soft delete
 app.delete('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
+
   try {
-    await sequelize.transaction(async (t) => {
-      await SensorData.destroy({ where: { applianceId: id }, transaction: t });
-      const deleted = await Appliance.destroy({ where: { id }, transaction: t });
-      if (!deleted) return res.status(404).json({ error: 'Not found' });
-    });
-    res.json({ message: 'Deleted successfully' });
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) {
+      return res.status(404).json({ error: 'Appliance not found' });
+    }
+
+    await appliance.destroy(); // ✅ Soft delete (sets deletedAt)
+    console.log(`🗑️ Appliance ${id} soft-deleted`);
+
+    res.json({ message: 'Appliance deleted (soft)' });
   } catch (err) {
+    console.error('Delete failed:', err);
     res.status(500).json({ error: 'Delete failed' });
   }
 });
 
-// === SCHEDULING ===
+// RESTORE - Bring back deleted appliance
+app.post('/api/appliances/:id/restore', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    const appliance = await Appliance.findByPk(id, { paranoid: false });
+    if (!appliance) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (!appliance.deletedAt) {
+      return res.status(400).json({ error: 'Already active' });
+    }
+
+    await appliance.restore();
+    console.log(`↩️ Appliance ${id} restored`);
+
+    res.json({ message: 'Restored successfully' });
+  } catch (err) {
+    console.error('Restore failed:', err);
+    res.status(500).json({ error: 'Restore failed' });
+  }
+});
+
+// === SCHEDULING ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -358,7 +398,6 @@ app.delete('/api/appliances/:id/schedule', async (req, res) => {
 });
 
 // === RELAY CONTROL (from frontend) ===
-
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
   const { action } = req.body;
@@ -390,7 +429,6 @@ app.post('/api/appliances/:id/control', async (req, res) => {
 });
 
 // === OTHER ENDPOINTS ===
-
 app.get('/api/appliances/:id/history', async (req, res) => {
   const { id } = req.params;
   const { range = '7d' } = req.query;
@@ -425,45 +463,46 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// ✅ NEW — SAFE, SEQUENTIAL STARTUP
+// ✅ SAFE SERVER STARTUP
 async function startServer() {
   try {
-    // 1. Connect to DB
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    // 2. Sync models
-    await sequelize.sync({ alter: true });  // or { force: false }
+    await sequelize.sync({ alter: true });
     console.log('✅ Models synced');
 
-    // 3. (Optional) Pre-create default appliances
+    // Seed default appliances only if they've never existed
     const defaultAppliances = [
-      { id: 1, name: 'Air Conditioner', type: 'Cooling', relay: 1, status: 'off' },
-      { id: 2, name: 'Refrigerator',    type: 'Cooling', relay: 2, status: 'off' },
-      { id: 3, name: 'Washing Machine', type: 'Laundry', relay: 3, status: 'off' },
-      { id: 4, name: 'Microwave',       type: 'Cooking', relay: 4, status: 'off' }
+      { id: 1, name: 'Air Conditioner', type: 'Cooling', relay: 1, status: 'off', manuallyAdded: false },
+      { id: 2, name: 'Refrigerator',    type: 'Cooling', relay: 2, status: 'off', manuallyAdded: false },
+      { id: 3, name: 'Washing Machine', type: 'Laundry', relay: 3, status: 'off', manuallyAdded: false },
+      { id: 4, name: 'Microwave',       type: 'Cooking', relay: 4, status: 'off', manuallyAdded: false }
     ];
 
     for (const appliance of defaultAppliances) {
-      const [record, created] = await Appliance.findOrCreate({
+      const existing = await Appliance.findOne({
         where: { id: appliance.id },
-        defaults: appliance
+        paranoid: false // include soft-deleted
       });
-      if (created) {
-        console.log(`🆕 Created Appliance ${record.id}: ${record.name}`);
+
+      if (!existing) {
+        await Appliance.create(appliance);
+        console.log(`🆕 Created default: ${appliance.name}`);
+      } else if (existing.deletedAt) {
+        console.log(`⏭️ Skipped (deleted): ${appliance.name}`);
+      } else {
+        console.log(`🔁 Exists: ${appliance.name}`);
       }
     }
 
-    // 4. Start server
     app.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
     });
-
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);
   }
 }
 
-// Start the server
 startServer();

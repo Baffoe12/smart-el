@@ -1,4 +1,3 @@
-// models/Appliance.js
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
@@ -24,7 +23,7 @@ module.exports = (sequelize) => {
       defaultValue: 'unknown',
       allowNull: false,
       validate: {
-        isIn: [['on', 'off', 'unknown']] // ✅ Now allows 'unknown'
+        isIn: [['on', 'off', 'unknown']]
       }
     },
     scheduled: {
@@ -39,16 +38,31 @@ module.exports = (sequelize) => {
     scheduleOff: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    manuallyAdded: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false
+    },
+    // ✅ Add soft delete field here
+    deletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true // null = not deleted
     }
   }, {
     tableName: 'Appliances',
     timestamps: true,
-    underscored: false
+    underscored: false,
+    // ✅ Enable paranoid mode for automatic soft delete
+    paranoid: true // ← This makes `destroy()` set `deletedAt` instead of deleting
   });
 
-  // 👇 Add this!
+  // 👇 Define association
   Appliance.associate = function(models) {
-    Appliance.hasMany(models.SensorData, { foreignKey: 'applianceId' });
+    Appliance.hasMany(models.SensorData, { 
+      foreignKey: 'applianceId',
+      onDelete: 'CASCADE' // Optional: delete sensor data when appliance is deleted
+    });
   };
 
   return Appliance;
