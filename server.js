@@ -8,6 +8,10 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const { Op } = require('sequelize');
 const { sequelize, User, Appliance, SensorData } = require('./models');
+// Set up associations
+Object.values(sequelize.models)
+  .filter(model => typeof model.associate === 'function')
+  .forEach(model => model.associate(sequelize.models));
 
 // Models are already imported above with the sequelize instance
 
@@ -28,17 +32,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// === SENSOR DATA ENDPOINTS ===
 app.post('/api/sensor-data', async (req, res) => {
+  console.log('📥 RAW Body:', req.body); // 👈 LOG RAW INPUT
+
   const { device_id, timestamp, relays } = req.body;
 
   if (!relays || !Array.isArray(relays)) {
     return res.status(400).json({ error: 'Invalid or missing relays array' });
   }
 
+  console.log('📦 Parsed relays:', relays); // 👈 LOG RELAYS
+
   try {
     // ✅ Ensure appliances exist
     for (const r of relays) {
+      console.log('🔍 Ensuring appliance:', r.id); // 👈 LOG
       await Appliance.findOrCreate({
         where: { id: r.id },
         defaults: {
@@ -50,26 +58,31 @@ app.post('/api/sensor-data', async (req, res) => {
       });
     }
 
-    const records = relays.map(r => ({
-      applianceId: r.id,
-      current: r.current,
-      voltage: 230,
-      power: r.power,
-      energy: r.energy_kwh,
-      cost: r.cost_ghs,
-      timestamp: new Date(timestamp || Date.now()),
-      deviceId: device_id
-    }));
+    const records = relays.map(r => {
+      const record = {
+        applianceId: r.id,
+        current: r.current,
+        voltage: 230,
+        power: r.power,
+        energy: r.energy_kwh,
+        cost: r.cost_ghs,
+        timestamp: new Date(timestamp || Date.now()),
+        deviceId: device_id
+      };
+      console.log('📝 Sensor record to save:', record); // 👈 LOG EACH RECORD
+      return record;
+    });
 
-    await SensorData.bulkCreate(records);
-    res.status(201).json({ message: 'Data saved' });
+    const result = await SensorData.bulkCreate(records);
+    console.log('✅ Saved to DB:', result.map(r => r.toJSON())); // 👈 LOG SUCCESS
+
+    res.status(201).json({ message: 'Data saved', count: result.length });
   } catch (err) {
-    console.error('Save error:', err);
-    res.status(500).json({ error: 'Failed to save data' });
+    console.error('❌ FULL ERROR:', err); // 👈 LOG FULL ERROR
+    console.error('❌ ERROR Stack:', err.stack);
+    res.status(500).json({ error: 'Failed to save data', details: err.message });
   }
 });
-
-
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
     const latest = await SensorData.findAll({

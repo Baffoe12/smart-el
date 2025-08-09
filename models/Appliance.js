@@ -17,14 +17,14 @@ module.exports = (sequelize) => {
     },
     relay: {
       type: DataTypes.INTEGER,
-      allowNull: false // 👈 assume relay is required
+      allowNull: false
     },
     status: {
       type: DataTypes.STRING,
-      defaultValue: 'off',
+      defaultValue: 'unknown',
       allowNull: false,
       validate: {
-        isIn: [['on', 'off']] // Only allow these values
+        isIn: [['on', 'off', 'unknown']] // ✅ Now allows 'unknown'
       }
     },
     scheduled: {
@@ -34,7 +34,7 @@ module.exports = (sequelize) => {
     },
     scheduleOn: {
       type: DataTypes.DATE,
-      allowNull: true // nullable because it's optional
+      allowNull: true
     },
     scheduleOff: {
       type: DataTypes.DATE,
@@ -43,11 +43,13 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'Appliances',
     timestamps: true,
-    underscored: false // set to true if you use snake_case (e.g., createdAt → created_at)
+    underscored: false
   });
 
-  // Optional: Add hooks or associations here
-  // Example: Appliance.hasMany(SensorData, { foreignKey: 'applianceId' });
+  // 👇 Add this!
+  Appliance.associate = function(models) {
+    Appliance.hasMany(models.SensorData, { foreignKey: 'applianceId' });
+  };
 
   return Appliance;
 };
