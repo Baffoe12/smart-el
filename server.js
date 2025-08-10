@@ -112,15 +112,17 @@ app.post('/api/sensor-data', async (req, res) => {
       }
     }
 
-    // ✅ Step 3: Create sensor records
-    const records = await Promise.all(relays.map(async r => {
+    // ✅ Step 3: Create sensor records with proper relay-to-appliance mapping
+    const records = [];
+    
+    for (const r of relays) {
       const relayNumber = parseInt(r.relay, 10);
       const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
       const date = new Date(validTimestamp);
 
       if (isNaN(date.getTime())) {
         console.warn('Invalid timestamp for relay:', r);
-        return null;
+        continue;
       }
 
       // Ensure appliance exists for this relay
@@ -140,19 +142,24 @@ app.post('/api/sensor-data', async (req, res) => {
         };
         
         appliance = await Appliance.create(defaultAppliance);
-        console.log(`🆕 Auto-created appliance for relay ${relayNumber}`);
+        console.log(`🆕 Auto-created appliance for relay ${relayNumber} with ID: ${appliance.id}`);
       } else if (appliance.deletedAt) {
         // Restore if soft-deleted
         await appliance.restore();
-        console.log(`↩️ Auto-restored appliance for relay ${relayNumber}`);
+        console.log(`↩️ Auto-restored appliance for relay ${relayNumber} with ID: ${appliance.id}`);
       }
 
       if (!appliance) {
         console.error(`❌ Failed to create/restore appliance for relay ${relayNumber}`);
-        return null;
+        continue;
       }
 
-      return {
+      // Ensure we have a valid appliance ID
+      if (!appliance.id || appliance.id > 10) {
+        console.warn(`⚠️ Appliance ID ${appliance.id} for relay ${relayNumber} seems unusual, checking...`);
+      }
+
+      records.push({
         applianceId: appliance.id,
         current: r.current || 0,
         voltage: 230,
@@ -160,8 +167,8 @@ app.post('/api/sensor-data', async (req, res) => {
         energy: r.energy_kwh || 0,
         cost: r.cost_ghs || 0,
         timestamp: date
-      };
-    }));
+      });
+    }
 
     const validRecords = records.filter(r => r !== null);
     if (validRecords.length === 0) {
