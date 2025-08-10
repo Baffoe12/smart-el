@@ -61,43 +61,55 @@ app.post('/api/sensor-data', async (req, res) => {
 
   try {
     // 🔒 Only accept data if appliance exists AND is not deleted
-    for (const r of relays) {
-      const applianceId = parseInt(r.id, 10);
-      const appliance = await Appliance.findOne({
-        where: { id: applianceId },
-        paranoid: false // Include soft-deleted
-      });
+   // Validate: each relay must have a matching appliance
+for (const r of relays) {
+  const relayNumber = parseInt(r.relay, 10); // ✅ Read "relay", not "id"
+  if (isNaN(relayNumber)) {
+    return res.status(400).json({ error: `Invalid relay number: ${r.relay}` });
+  }
 
-      if (!appliance || appliance.deletedAt) {
-        console.warn(`❌ Appliance ${applianceId} not found or was deleted — rejecting`);
-        return res.status(400).json({
-          error: `Appliance ${applianceId} not found or was deleted.`
-        });
-      }
-    }
+  const appliance = await Appliance.findOne({
+    where: { relay: relayNumber }, // ✅ Search by relay number
+    paranoid: false
+  });
 
-    // Map relays to sensor records
-    const records = relays.map(r => {
-      const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
-      const date = new Date(validTimestamp);
-
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid timestamp for relay:', r);
-        return null;
-      }
-
-      return {
-        applianceId: parseInt(r.id, 10),
-        current: r.current || 0,
-        voltage: 230,
-        power: r.power || 0,
-        energy: r.energy_kwh || 0,
-        cost: r.cost_ghs || 0,
-        timestamp: date,
-        deviceId: device_id
-      };
+  if (!appliance || appliance.deletedAt) {
+    console.warn(`❌ Appliance for relay ${relayNumber} not found or deleted`);
+    return res.status(400).json({
+      error: `Appliance for relay ${relayNumber} not found or was deleted.`
     });
+  }
+}
 
+const records = await Promise.all(relays.map(async r => {
+  const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
+  const date = new Date(validTimestamp);
+
+  if (isNaN(date.getTime())) {
+    console.warn('Invalid timestamp for relay:', r);
+    return null;
+  }
+
+  // Get the appliance to use its real DB ID
+  const relayNumber = parseInt(r.relay, 10);
+  const appliance = await Appliance.findOne({
+    where: { relay: relayNumber },
+    paranoid: false
+  });
+
+  if (!appliance || appliance.deletedAt) return null; // Should never happen due to earlier check
+
+  return {
+    applianceId: appliance.id, // ✅ Real database ID
+    current: r.current || 0,
+    voltage: 230,
+    power: r.power || 0,
+    energy: r.energy_kwh || 0,
+    cost: r.cost_ghs || 0,
+    timestamp: date
+    // ❌ Remove: deviceId: device_id (not part of SensorData)
+  };
+}));
     const validRecords = records.filter(r => r !== null);
     if (validRecords.length === 0) {
       return res.status(400).json({ error: 'No valid sensor data records' });
