@@ -3,42 +3,25 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Device = sequelize.define('Device', {
-    // Primary key: maps to `device_id` in DB
     deviceId: {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
-      field: 'device_id',
-      comment: 'Unique identifier for the IoT device (e.g., SmartBoard_01)'
+      field: 'device_id' // Maps JS camelCase → DB snake_case
     },
-
-    // Device IP address
     ip: {
       type: DataTypes.STRING,
-      allowNull: false,
-      validate: {
-        isIP: {
-          args: [4],
-          msg: 'IP address must be a valid IPv4 address'
-        }
-      }
+      allowNull: false
     },
-
-    // Last time the device checked in
     lastSeen: {
       type: DataTypes.DATE,
-      field: 'last_seen',
-      allowNull: true,
-      defaultValue: null,
-      comment: 'Timestamp of last communication from the device'
+      field: 'last_seen'
     }
   }, {
-    // Table configuration
     tableName: 'Devices',
-    timestamps: true,     // Enables createdAt, updatedAt
-    paranoid: true,       // Enables soft-delete with deletedAt
-    underscored: true,    // Enables camelCase → snake_case mapping
-    comment: 'Stores information about connected IoT devices'
+    timestamps: true,     // Creates createdAt/updatedAt
+    paranoid: true,       // Enables soft-delete (deletedAt)
+    underscored: true     // Enables camelCase → snake_case
   });
 
   // === ASSOCIATIONS ===
