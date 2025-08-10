@@ -600,15 +600,20 @@ for (const appliance of defaultAppliances) {
   });
 
   if (!existing) {
+    // Create if doesn't exist
     await Appliance.create(appliance);
     console.log(`🆕 Created: ${appliance.name}`);
   } else if (existing.deletedAt) {
-    // Hard delete and recreate to get clean ID
-    await Appliance.destroy({ where: { id: existing.id }, force: true });
-    await Appliance.create(appliance);
-    console.log(`💥 Recreated: ${appliance.name}`);
+    // Restore if soft-deleted
+    await existing.restore();
+    console.log(`↩️ Restored: ${appliance.name}`);
   } else {
-    console.log(`✅ Already exists: ${appliance.name}`);
+    // Update name if changed (e.g., from "Rice Cooker" → "Socket A")
+    if (existing.name !== appliance.name) {
+      await existing.update({ name: appliance.name });
+      console.log(`📝 Updated: ${existing.name} → ${appliance.name}`);
+    }
+    console.log(`✅ Active: ${appliance.name}`);
   }
 }
   app.listen(port, '0.0.0.0', () => {
