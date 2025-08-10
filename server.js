@@ -647,36 +647,33 @@ async function startServer() {
         lastSeen: new Date()
       }
     });
+// === Force Re-Seed Default Appliances ===
+const defaultAppliances = [
+  { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
+  { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
+  { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
+  { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
+];
 
-    // Seed default appliances
-    const defaultAppliances = [
-      { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
-      { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
-      { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
-      { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
-    ];
-// In your startServer() function, replace the appliance seeding with:
-for (const appliance of defaultAppliances) {
+for (const def of defaultAppliances) {
   const existing = await Appliance.findOne({
-    where: { relay: appliance.relay },
+    where: { relay: def.relay },
     paranoid: false
   });
 
   if (!existing) {
-    // Create if doesn't exist
-    await Appliance.create(appliance);
-    console.log(`🆕 Created: ${appliance.name}`);
+    await Appliance.create(def);
+    console.log(`🆕 Created: ${def.name}`);
   } else if (existing.deletedAt) {
-    // Restore if soft-deleted
     await existing.restore();
-    console.log(`↩️ Restored: ${appliance.name}`);
+    console.log(`↩️ Restored: ${def.name}`);
   } else {
     // Update name if changed (e.g., from "Rice Cooker" → "Socket A")
-    if (existing.name !== appliance.name) {
-      await existing.update({ name: appliance.name });
-      console.log(`📝 Updated: ${existing.name} → ${appliance.name}`);
+    if (existing.name !== def.name) {
+      await existing.update({ name: def.name });
+      console.log(`📝 Updated: ${existing.name} → ${def.name}`);
     }
-    console.log(`✅ Active: ${appliance.name}`);
+    console.log(`✅ Active: ${def.name}`);
   }
 }
   app.listen(port, '0.0.0.0', () => {
