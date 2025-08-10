@@ -9,11 +9,11 @@ module.exports = (sequelize) => {
     cost: { type: DataTypes.FLOAT },
     timestamp: { type: DataTypes.DATE },
     deviceId: {
-      type: DataTypes.INTEGER, // ← Changed from STRING to INTEGER
+      type: DataTypes.STRING,
       allowNull: false,
       references: {
         model: 'Devices',
-        key: 'id'
+        key: 'device_id'
       }
     }
   }, {
