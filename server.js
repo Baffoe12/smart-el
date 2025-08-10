@@ -432,6 +432,7 @@ app.post('/api/appliances/:id/restore', async (req, res) => {
 });
 
 // === RELAY CONTROL (from frontend) - Uses Dynamic IP ===
+// === RELAY CONTROL (from frontend) - Uses Dynamic IP ===
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
   const { action } = req.body;
@@ -443,23 +444,22 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const appliance = await Appliance.findByPk(id);
     if (!appliance) return res.status(404).json({ error: 'Not found' });
 
+    // ✅ Validate relay is 1–4
+    if (![1, 2, 3, 4].includes(appliance.relay)) {
+      return res.status(400).json({ error: `Invalid relay number: ${appliance.relay}` });
+    }
+
     // ✅ Get latest device IP via SensorData
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
-      include: [
-        {
-          model: Device,
-          as: 'device' // ✅ Matches `as: 'device'` in association
-        }
-      ]
+      include: [{ model: Device, as: 'device' }]
     });
 
-    if (!latestData || !latestData.device) {
-      return res.status(404).json({ error: 'No device linked to this appliance' });
-    }
+    // ✅ Fallback IP if no data yet
+    const deviceIp = latestData?.device?.ip || '172.20.10.3';
+    console.log(`Using IP: ${deviceIp} for appliance ${id}`);
 
-    const deviceIp = latestData.device.ip;
     const state = action === 'on' ? 1 : 0;
     const url = `http://${deviceIp}/relay?relay=${appliance.relay}&state=${state}`;
 
@@ -468,13 +468,13 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       console.log(`✅ Relay ${appliance.relay} turned ${action} via ${deviceIp}`);
     } catch (err) {
       console.warn(`⚠️ Failed to reach ESP32 at ${deviceIp}:`, err.message);
-      return res.status(500).json({ error: 'Failed to reach device' });
+      return res.status(500).json({ 
+        error: 'Failed to reach device', 
+        ip: deviceIp 
+      });
     }
 
-    appliance.status = action;
-    await appliance.save();
-
-    res.json({ message: `Appliance turned ${action}`, appliance });
+    res.json({ message: `Appliance turned ${action}` });
   } catch (err) {
     console.error('Control failed:', err);
     res.status(500).json({ error: 'Control failed' });
