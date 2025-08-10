@@ -5,15 +5,14 @@ module.exports = {
         type: Sequelize.STRING,
         primaryKey: true,
         allowNull: false,
-        field: 'device_id' // ← This ensures the DB column is named `device_id`
+        field: 'device_id' // ← Ensures column is named `device_id`
       },
       ip: {
         type: Sequelize.STRING,
         allowNull: false
       },
       last_seen: {
-        type: Sequelize.DATE,
-        field: 'last_seen'
+        type: Sequelize.DATE
       },
       createdAt: {
         type: Sequelize.DATE,

@@ -1,13 +1,11 @@
 // models/Device.js
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Device = sequelize.define('Device', {
     deviceId: {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
-      field: 'deviceId'  // Changed from 'device_id' to match actual column name
+      field: 'device_id' // ← Critical: maps JS `deviceId` to DB `device_id`
     },
     ip: {
       type: DataTypes.STRING,
@@ -16,24 +14,12 @@ module.exports = (sequelize) => {
     lastSeen: {
       type: DataTypes.DATE,
       field: 'last_seen'
-    },
-    createdAt: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    updatedAt: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    deletedAt: {
-      type: DataTypes.DATE,
-      allowNull: true
     }
   }, {
     tableName: 'Devices',
     timestamps: true,
     paranoid: true,
-    underscored: true
+    underscored: true // ← Converts createdAt → created_at, etc.
   });
 
   Device.associate = function(models) {
