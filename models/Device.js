@@ -5,7 +5,7 @@ module.exports = (sequelize) => {
   const Device = sequelize.define('Device', {
     deviceId: {
       type: DataTypes.STRING,
-      primaryKey: true, // ✅ Make it the PK
+      primaryKey: true, // ✅ Make this the PK
       allowNull: false,
       field: 'device_id'
     },

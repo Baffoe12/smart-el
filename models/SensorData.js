@@ -3,11 +3,7 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const SensorData = sequelize.define('SensorData', {
-    applianceId: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      field: 'applianceId'
-    },
+    applianceId: { type: DataTypes.INTEGER, allowNull: false },
     current: { type: DataTypes.FLOAT },
     voltage: { type: DataTypes.FLOAT },
     power: { type: DataTypes.INTEGER },
@@ -17,17 +13,13 @@ module.exports = (sequelize) => {
     deviceId: { // ✅ Must be STRING
       type: DataTypes.STRING,
       allowNull: false,
-      field: 'deviceId',
-      references: {
-        model: 'Devices',
-        key: 'deviceId' // ✅ References deviceId, not id
-      }
+      field: 'deviceId'
     }
   }, {
     tableName: 'SensorData',
     timestamps: true,
     paranoid: true,
-    underscored: true
+    underscoreed: true
   });
 
   SensorData.associate = function(models) {
