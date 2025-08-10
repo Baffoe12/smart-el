@@ -525,8 +525,8 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    await sequelize.sync({ alter: true });
-    console.log('✅ Models synced');
+console.log('✅ Skipping auto-sync. Use migrations for schema changes.');
+// await sequelize.sync(); // Use this only to create tables if they don't exist
 
     // Ensure device exists
     await Device.findOrCreate({

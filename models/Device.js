@@ -7,7 +7,7 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
-      field: 'device_id'
+      field: 'deviceId'  // Changed from 'device_id' to match actual column name
     },
     ip: {
       type: DataTypes.STRING,
@@ -16,6 +16,18 @@ module.exports = (sequelize) => {
     lastSeen: {
       type: DataTypes.DATE,
       field: 'last_seen'
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    deletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'Devices',

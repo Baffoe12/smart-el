@@ -2,22 +2,19 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    // Remove FK first
+    // First, we need to handle the foreign key dependencies
+    // Remove the foreign key constraint from SensorData
     await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey').catch(() => {});
-
-    // Make sure Devices.deviceId is STRING and NOT NULL
+    
+    // Now we can safely modify the Devices table
+    // Ensure deviceId is properly configured as primary key
     await queryInterface.changeColumn('Devices', 'deviceId', {
       type: Sequelize.STRING,
-      allowNull: false
+      allowNull: false,
+      primaryKey: true
     });
-
-    // Re-add as primary key (if desired)
-    await queryInterface.sequelize.query(`
-      ALTER TABLE "Devices" DROP CONSTRAINT IF EXISTS "Devices_pkey",
-      ADD CONSTRAINT "Devices_pkey" PRIMARY KEY ("deviceId")
-    `);
-
-    // Re-add FK
+    
+    // Re-add the foreign key constraint
     await queryInterface.addConstraint('SensorData', {
       fields: ['deviceId'],
       type: 'foreign key',
@@ -32,21 +29,17 @@ module.exports = {
   },
 
   down: async (queryInterface, Sequelize) => {
-    // Remove FK
+    // Remove foreign key constraint
     await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey').catch(() => {});
     
-    // Remove primary key constraint
-    await queryInterface.sequelize.query(`
-      ALTER TABLE "Devices" DROP CONSTRAINT IF EXISTS "Devices_pkey"
-    `);
-    
-    // Revert deviceId column to allow null (if needed)
+    // Revert deviceId column changes if needed
     await queryInterface.changeColumn('Devices', 'deviceId', {
       type: Sequelize.STRING,
-      allowNull: true
+      allowNull: false,
+      primaryKey: true
     });
     
-    // Re-add FK with original constraints
+    // Re-add foreign key constraint
     await queryInterface.addConstraint('SensorData', {
       fields: ['deviceId'],
       type: 'foreign key',
