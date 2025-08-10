@@ -9,6 +9,11 @@ module.exports = (sequelize) => {
       allowNull: false,
       field: 'device_id'
     },
+    // models/Device.js
+device_id: {
+  type: DataTypes.STRING,
+  primaryKey: true
+}
     ip: {
       type: DataTypes.STRING,
       allowNull: false
@@ -22,6 +27,7 @@ module.exports = (sequelize) => {
     timestamps: true,
     underscored: true
   });
+  
 
   Device.associate = function(models) {
     Device.hasMany(models.SensorData, { 

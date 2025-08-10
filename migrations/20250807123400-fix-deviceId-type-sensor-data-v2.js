@@ -1,94 +1,87 @@
+// migrations/xxxxx-fix-sensor-data-deviceid-foreign-key.js
+
 'use strict';
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    // Step 1: Check if the column exists and get current type
-    const tableDescription = await queryInterface.describeTable('SensorData');
-    const hasDeviceId = tableDescription.hasOwnProperty('deviceId');
-    
-    if (hasDeviceId) {
-      // Step 2: Drop existing foreign key constraint if it exists
-      try {
-        await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey');
-      } catch (error) {
-        // Constraint might not exist, continue
-        console.log('Constraint SensorData_deviceId_fkey does not exist, skipping removal');
-      }
-      
-      // Step 3: Handle data conversion
-      // First, make column nullable to handle any data issues
-      await queryInterface.changeColumn('SensorData', 'deviceId', {
-        type: Sequelize.STRING,
-        allowNull: true
-      });
-      
-      // Step 4: Update any existing data if needed
-      // (This would be application-specific if you have data to migrate)
-      
-      // Step 5: Make column non-nullable
-      await queryInterface.changeColumn('SensorData', 'deviceId', {
-        type: Sequelize.STRING,
-        allowNull: false
-      });
-      
-      // Step 6: Add foreign key constraint
-      await queryInterface.addConstraint('SensorData', {
-        fields: ['deviceId'],
-        type: 'foreign key',
-        name: 'SensorData_deviceId_fkey',
-        references: {
-          table: 'Devices',
-          field: 'device_id'
-        },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE'
-      });
-    } else {
-      // Column doesn't exist, create it properly
-      await queryInterface.addColumn('SensorData', 'deviceId', {
-        type: Sequelize.STRING,
-        allowNull: false,
-        references: {
-          model: 'Devices',
-          key: 'device_id'
+    const transaction = await queryInterface.sequelize.transaction();
+
+    try {
+      const tableDescription = await queryInterface.describeTable('SensorData');
+      const hasDeviceId = tableDescription.hasOwnProperty('deviceId');
+
+      if (hasDeviceId) {
+        // Drop existing FK if exists
+        try {
+          await queryInterface.removeConstraint(
+            'SensorData',
+            'SensorData_deviceId_fkey',
+            { transaction }
+          );
+        } catch (err) {
+          console.log('No foreign key constraint to remove: SensorData_deviceId_fkey');
         }
-      });
-      
-      await queryInterface.addConstraint('SensorData', {
-        fields: ['deviceId'],
-        type: 'foreign key',
-        name: 'SensorData_deviceId_fkey',
-        references: {
-          table: 'Devices',
-          field: 'device_id'
-        },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE'
-      });
+
+        // Ensure column is STRING and NOT NULL
+        await queryInterface.changeColumn('SensorData', 'deviceId', {
+          type: Sequelize.STRING,
+          allowNull: false
+        }, { transaction });
+
+        // Re-add foreign key to Devices(device_id)
+        await queryInterface.addConstraint('SensorData', {
+          fields: ['deviceId'],
+          type: 'foreign key',
+          name: 'SensorData_deviceId_fkey',
+          references: {
+            table: 'Devices',
+            field: 'device_id'
+          },
+          onDelete: 'CASCADE',
+          onUpdate: 'CASCADE'
+        }, { transaction });
+
+      } else {
+        // Column doesn't exist — add it
+        await queryInterface.addColumn('SensorData', 'deviceId', {
+          type: Sequelize.STRING,
+          allowNull: false
+        }, { transaction });
+
+        await queryInterface.addConstraint('SensorData', {
+          fields: ['deviceId'],
+          type: 'foreign key',
+          name: 'SensorData_deviceId_fkey',
+          references: {
+            table: 'Devices',
+            field: 'device_id'
+          },
+          onDelete: 'CASCADE',
+          onUpdate: 'CASCADE'
+        }, { transaction });
+      }
+
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      console.error('Migration failed:', error);
+      throw error;
     }
   },
 
   down: async (queryInterface, Sequelize) => {
+    const transaction = await queryInterface.sequelize.transaction();
     try {
-      await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey');
-    } catch (error) {
-      console.log('Constraint SensorData_deviceId_fkey does not exist, skipping removal');
-    }
-    
-    // Check if column was originally added by 20250807123200
-    const originalMigration = await queryInterface.sequelize.query(
-      "SELECT * FROM \"SequelizeMeta\" WHERE name = '20250807123200-add-deviceId-to-sensor-data.js'"
-    );
-    
-    if (originalMigration[0].length > 0) {
-      // Column was added by original migration, keep it as STRING
+      await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey', { transaction });
       await queryInterface.changeColumn('SensorData', 'deviceId', {
         type: Sequelize.STRING,
         allowNull: true
-      });
-    } else {
-      // Column was created by this migration, remove it
-      await queryInterface.removeColumn('SensorData', 'deviceId');
+      }, { transaction });
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      console.error('Rollback failed:', error);
+      throw error;
     }
   }
 };
