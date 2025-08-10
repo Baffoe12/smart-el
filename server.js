@@ -592,6 +592,7 @@ async function startServer() {
       { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
       { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
     ];
+// In your startServer() function, replace the appliance seeding with:
 for (const appliance of defaultAppliances) {
   const existing = await Appliance.findOne({
     where: { relay: appliance.relay },
@@ -599,17 +600,15 @@ for (const appliance of defaultAppliances) {
   });
 
   if (!existing) {
-    // Brand new
     await Appliance.create(appliance);
     console.log(`🆕 Created: ${appliance.name}`);
   } else if (existing.deletedAt) {
-    // Soft-deleted → restore it
-    await Appliance.restore({ where: { id: existing.id } });
-    await existing.update({ status: 'off' }); // Reset state
-    console.log(`↩️ Restored: ${appliance.name}`);
+    // Hard delete and recreate to get clean ID
+    await Appliance.destroy({ where: { id: existing.id }, force: true });
+    await Appliance.create(appliance);
+    console.log(`💥 Recreated: ${appliance.name}`);
   } else {
-    // Already active
-    console.log(`✅ Active: ${appliance.name}`);
+    console.log(`✅ Already exists: ${appliance.name}`);
   }
 }
   app.listen(port, '0.0.0.0', () => {
