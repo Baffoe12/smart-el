@@ -22,8 +22,8 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'SensorData',
     timestamps: true,
-    paranoid: true,
-    underscored: true
+    paranoid: true,     // ← Only if you add `deleted_at`
+    underscored: true   // ← Use snake_case
   });
 
   return SensorData;
