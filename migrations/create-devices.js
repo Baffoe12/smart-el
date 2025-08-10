@@ -5,7 +5,7 @@ module.exports = {
         type: Sequelize.STRING,
         primaryKey: true,
         allowNull: false,
-        field: 'device_id'
+        field: 'device_id' // ← Ensures column is named `device_id`
       },
       ip: {
         type: Sequelize.STRING,
@@ -13,8 +13,7 @@ module.exports = {
       },
       lastSeen: {
         type: Sequelize.DATE,
-        field: 'last_seen',
-        allowNull: true
+        field: 'last_seen'
       },
       createdAt: {
         type: Sequelize.DATE,
@@ -29,7 +28,7 @@ module.exports = {
       deletedAt: {
         type: Sequelize.DATE,
         field: 'deleted_at',
-        allowNull: true // ← Explicitly allow NULL
+        allowNull: true
       }
     });
   },
