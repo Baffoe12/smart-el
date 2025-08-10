@@ -386,7 +386,12 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
-      include: [Device]
+      include: [
+        {
+          model: Device,
+          as: 'Device' // ✅ Required because of `as: 'Device'` in association
+        }
+      ]
     });
 
     if (!latestData || !latestData.Device) {
