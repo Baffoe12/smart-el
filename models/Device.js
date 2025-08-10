@@ -5,7 +5,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
-      field: 'device_id' // ← Critical: maps JS `deviceId` to DB `device_id`
+      field: 'device_id'
     },
     ip: {
       type: DataTypes.STRING,
@@ -19,14 +19,13 @@ module.exports = (sequelize, DataTypes) => {
     tableName: 'Devices',
     timestamps: true,
     paranoid: true,
-    underscored: true // ← Converts createdAt → created_at, etc.
+    underscored: true // ← Enables camelCase → snake_case
   });
 
   Device.associate = function(models) {
     Device.hasMany(models.SensorData, {
       foreignKey: 'deviceId',
-      sourceKey: 'deviceId',
-      as: 'sensorData'
+      sourceKey: 'deviceId'
     });
   };
 
