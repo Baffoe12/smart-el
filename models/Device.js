@@ -20,7 +20,7 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'Devices',
     timestamps: true,
-    underscored: true // uses device_id, last_seen
+    underscored: true
   });
 
   Device.associate = function(models) {

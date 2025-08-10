@@ -6,26 +6,47 @@ module.exports = (sequelize) => {
     applianceId: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: 'Appliances',
-        key: 'id'
-      }
+      field: 'applianceId'
     },
-    current: { type: DataTypes.FLOAT },
-    voltage: { type: DataTypes.FLOAT, defaultValue: 230 },
-    power: { type: DataTypes.FLOAT },
-    energy: { type: DataTypes.FLOAT },
-    cost: { type: DataTypes.FLOAT },
-    timestamp: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    deviceId: { type: DataTypes.STRING }
+    current: {
+      type: DataTypes.FLOAT,
+      allowNull: false
+    },
+    voltage: {
+      type: DataTypes.FLOAT,
+      allowNull: false
+    },
+    power: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
+    energy: {
+      type: DataTypes.FLOAT,
+      allowNull: false
+    },
+    cost: {
+      type: DataTypes.FLOAT,
+      allowNull: false
+    },
+    timestamp: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    deviceId: {  // ← This must be STRING to match Device's id
+      type: DataTypes.STRING,
+      allowNull: false,
+      field: 'deviceId'
+    }
   }, {
     tableName: 'SensorData',
-    timestamps: false
+    timestamps: true,
+    paranoid: true,
+    underscored: true
   });
 
-  // 👇 Add this!
   SensorData.associate = function(models) {
     SensorData.belongsTo(models.Appliance, { foreignKey: 'applianceId' });
+    SensorData.belongsTo(models.Device, { foreignKey: 'deviceId' }); // ← Now compatible
   };
 
   return SensorData;
