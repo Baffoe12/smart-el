@@ -1,55 +1,26 @@
-'use strict';
-
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    // First, we need to handle the foreign key dependencies
-    // Remove the foreign key constraint from SensorData
-    await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey').catch(() => {});
-    
-    // Now we can safely modify the Devices table
-    // Ensure deviceId is properly configured as primary key
-    await queryInterface.changeColumn('Devices', 'deviceId', {
-      type: Sequelize.STRING,
-      allowNull: false,
-      primaryKey: true
-    });
-    
-    // Re-add the foreign key constraint
-    await queryInterface.addConstraint('SensorData', {
-      fields: ['deviceId'],
-      type: 'foreign key',
-      name: 'SensorData_deviceId_fkey',
-      references: {
-        table: 'Devices',
-        field: 'deviceId'
-      },
-      onDelete: 'CASCADE',
-      onUpdate: 'CASCADE'
-    });
+    const tableInfo = await queryInterface.describeTable('Devices');
+
+    // Only add deviceId if it doesn't exist
+    if (!tableInfo.deviceId && !tableInfo.device_id) {
+      await queryInterface.addColumn('Devices', 'deviceId', {
+        type: Sequelize.STRING,
+        primaryKey: true,
+        allowNull: false,
+        field: 'device_id'
+      });
+    }
   },
 
   down: async (queryInterface, Sequelize) => {
-    // Remove foreign key constraint
-    await queryInterface.removeConstraint('SensorData', 'SensorData_deviceId_fkey').catch(() => {});
-    
-    // Revert deviceId column changes if needed
-    await queryInterface.changeColumn('Devices', 'deviceId', {
-      type: Sequelize.STRING,
-      allowNull: false,
-      primaryKey: true
-    });
-    
-    // Re-add foreign key constraint
-    await queryInterface.addConstraint('SensorData', {
-      fields: ['deviceId'],
-      type: 'foreign key',
-      name: 'SensorData_deviceId_fkey',
-      references: {
-        table: 'Devices',
-        field: 'deviceId'
-      },
-      onDelete: 'CASCADE',
-      onUpdate: 'CASCADE'
-    });
+    const tableInfo = await queryInterface.describeTable('Devices');
+
+    // Only remove if it exists
+    if (tableInfo.deviceId) {
+      await queryInterface.removeColumn('Devices', 'deviceId');
+    } else if (tableInfo.device_id) {
+      await queryInterface.removeColumn('Devices', 'device_id');
+    }
   }
 };
