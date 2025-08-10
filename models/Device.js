@@ -5,8 +5,8 @@ module.exports = (sequelize) => {
   const Device = sequelize.define('Device', {
     deviceId: {
       type: DataTypes.STRING,
+      primaryKey: true, // ✅ Make it the PK
       allowNull: false,
-      unique: true,
       field: 'device_id'
     },
     ip: {
@@ -24,7 +24,10 @@ module.exports = (sequelize) => {
   });
 
   Device.associate = function(models) {
-    Device.hasMany(models.SensorData, { foreignKey: 'deviceId', as: 'sensorData' });
+    Device.hasMany(models.SensorData, { 
+      foreignKey: 'deviceId', 
+      as: 'sensorData' 
+    });
   };
 
   return Device;

@@ -8,34 +8,20 @@ module.exports = (sequelize) => {
       allowNull: false,
       field: 'applianceId'
     },
-    current: {
-      type: DataTypes.FLOAT,
-      allowNull: false
-    },
-    voltage: {
-      type: DataTypes.FLOAT,
-      allowNull: false
-    },
-    power: {
-      type: DataTypes.INTEGER,
-      allowNull: false
-    },
-    energy: {
-      type: DataTypes.FLOAT,
-      allowNull: false
-    },
-    cost: {
-      type: DataTypes.FLOAT,
-      allowNull: false
-    },
-    timestamp: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    deviceId: {  // ← This must be STRING to match Device's id
+    current: { type: DataTypes.FLOAT },
+    voltage: { type: DataTypes.FLOAT },
+    power: { type: DataTypes.INTEGER },
+    energy: { type: DataTypes.FLOAT },
+    cost: { type: DataTypes.FLOAT },
+    timestamp: { type: DataTypes.DATE },
+    deviceId: { // ✅ Must be STRING
       type: DataTypes.STRING,
       allowNull: false,
-      field: 'deviceId'
+      field: 'deviceId',
+      references: {
+        model: 'Devices',
+        key: 'deviceId' // ✅ References deviceId, not id
+      }
     }
   }, {
     tableName: 'SensorData',
@@ -46,7 +32,7 @@ module.exports = (sequelize) => {
 
   SensorData.associate = function(models) {
     SensorData.belongsTo(models.Appliance, { foreignKey: 'applianceId' });
-    SensorData.belongsTo(models.Device, { foreignKey: 'deviceId' }); // ← Now compatible
+    SensorData.belongsTo(models.Device, { foreignKey: 'deviceId' }); // ✅ Now valid
   };
 
   return SensorData;
