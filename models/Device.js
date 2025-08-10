@@ -7,7 +7,7 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
-      field: 'device_id' // Maps JS camelCase → DB snake_case
+      field: 'device_id'
     },
     ip: {
       type: DataTypes.STRING,
@@ -19,19 +19,10 @@ module.exports = (sequelize) => {
     }
   }, {
     tableName: 'Devices',
-    timestamps: true,     // Creates createdAt/updatedAt
-    paranoid: true,       // Enables soft-delete (deletedAt)
-    underscored: true     // Enables camelCase → snake_case
+    timestamps: true,
+    paranoid: true,
+    underscored: true // ← Critical!
   });
-
-  // === ASSOCIATIONS ===
-  Device.associate = function(models) {
-    Device.hasMany(models.SensorData, {
-      foreignKey: 'deviceId',
-      sourceKey: 'deviceId',
-      as: 'sensorData'
-    });
-  };
 
   return Device;
 };
