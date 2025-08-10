@@ -8,13 +8,15 @@ module.exports = (sequelize) => {
     energy: { type: DataTypes.FLOAT },
     cost: { type: DataTypes.FLOAT },
     timestamp: { type: DataTypes.DATE },
-    deviceId: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      references: {
-        model: 'Devices',
-        key: 'device_id'
-      }
+    // models/SensorData.js
+deviceId: {
+  type: DataTypes.STRING,
+  allowNull: false,
+  references: {
+    model: 'Device',
+    key: 'device_id'
+  }
+}
     }
   }, {
     tableName: 'SensorData',
