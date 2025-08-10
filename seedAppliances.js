@@ -1,32 +1,31 @@
-const { Appliance } = require('./models');
+// After sequelize.sync()
+console.log('🔧 Ensuring appliance IDs match relay numbers...');
 
-async function addAppliances() {
-  const appliancesData = [
-    { type: 'Appliance 1', relay: 1 },
-    { type: 'Appliance 2', relay: 2 },
-    { type: 'Appliance 3', relay: 3 },
-    { type: 'Appliance 4', relay: 4 },
-  ];
+const expectedAppliances = [
+  { id: 1, name: 'Socket A', relay: 1 },
+  { id: 2, name: 'Socket B', relay: 2 },
+  { id: 3, name: 'Socket C', relay: 3 },
+  { id: 4, name: 'Socket D', relay: 4 }
+];
 
-  for (const applianceData of appliancesData) {
-    const [appliance, created] = await Appliance.findOrCreate({
-      where: { relay: applianceData.relay },
-      defaults: applianceData,
+for (const ap of expectedAppliances) {
+  const existing = await Appliance.findOne({
+    where: { relay: ap.relay },
+    paranoid: false
+  });
+
+  if (!existing) {
+    await Appliance.create(ap);
+    console.log(`✅ Created appliance ${ap.id} for relay ${ap.relay}`);
+  } else if (existing.id !== ap.id) {
+    // Wrong ID — delete and recreate
+    await Appliance.destroy({
+      where: { id: existing.id },
+      force: true
     });
-    if (created) {
-      console.log(`Created appliance for relay ${applianceData.relay}`);
-    } else {
-      console.log(`Appliance for relay ${applianceData.relay} already exists`);
-    }
+    await Appliance.create(ap);
+    console.log(`🔄 Reset appliance ID ${existing.id} → ${ap.id}`);
+  } else {
+    console.log(`✅ Appliance ${ap.id} OK`);
   }
 }
-
-addAppliances()
-  .then(() => {
-    console.log('Appliance setup complete');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('Error setting up appliances:', error);
-    process.exit(1);
-  });

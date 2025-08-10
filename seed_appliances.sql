@@ -1,16 +1,15 @@
-INSERT INTO "Appliances" 
-("id", "name", "deviceId", "current", "voltage", "power", "amount", "isOn", "createdAt", "updatedAt")
-VALUES
-  (1, 'Socket A', 'SmartBoard_01', 5.0,  220, 1100, 150.00, true,  NOW(), NOW()),
-  (2, 'Socket B', 'SmartBoard_01', 1.2,  220,  264,  50.00, true,  NOW(), NOW()),
-  (3, 'Socket C', 'SmartBoard_01', 3.0,  220,  660,  75.00, false, NOW(), NOW()),
-  (4, 'Socket D', 'SmartBoard_01', 2.5,  220,  550,  40.00, false, NOW(), NOW())
-ON CONFLICT ("id") DO UPDATE SET
-  "name" = EXCLUDED."name",
-  "deviceId" = EXCLUDED."deviceId",
-  "current" = EXCLUDED."current",
-  "voltage" = EXCLUDED."voltage",
-  "power" = EXCLUDED."power",
-  "amount" = EXCLUDED."amount",
-  "isOn" = EXCLUDED."isOn",
-  "updatedAt" = NOW();
+SELECT 
+  tc.constraint_name, 
+  tc.table_name,
+  kcu.column_name,
+  ccu.table_name AS references_table,
+  ccu.column_name AS references_column
+FROM 
+  information_schema.table_constraints AS tc 
+  JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+    AND tc.table_schema = kcu.table_schema
+  JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+    AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = 'SensorData';

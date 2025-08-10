@@ -131,19 +131,36 @@ app.post('/api/sensor-data', async (req, res) => {
         paranoid: false
       });
 
-      if (!appliance) {
-        // Create appliance if it doesn't exist
-        const defaultAppliance = {
-          name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
-          type: 'power',
-          relay: relayNumber,
-          status: 'off',
-          manuallyAdded: false
-        };
-        
-        appliance = await Appliance.create(defaultAppliance);
-        console.log(`🆕 Auto-created appliance for relay ${relayNumber} with ID: ${appliance.id}`);
-      } else if (appliance.deletedAt) {
+     if (!appliance) {
+  // Force appliance.id = relay number
+  const defaultAppliance = {
+    id: relayNumber,  // ← Explicitly set ID
+    name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
+    type: 'power',
+    relay: relayNumber,
+    status: 'off',
+    manuallyAdded: false
+  };
+
+  try {
+    appliance = await Appliance.create(defaultAppliance);
+    console.log(`🆕 Created appliance with ID=${relayNumber}`);
+  } catch (createErr) {
+    if (createErr.name === 'SequelizeUniqueConstraintError') {
+      console.warn(`ID ${relayNumber} taken, falling back to auto-create`);
+      // Fallback if ID conflict
+      appliance = await Appliance.create({
+        name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
+        type: 'power',
+        relay: relayNumber,
+        status: 'off',
+        manuallyAdded: false
+      });
+    } else {
+      throw createErr;
+    }
+  }
+} else if (appliance.deletedAt) {
         // Restore if soft-deleted
         await appliance.restore();
         console.log(`↩️ Auto-restored appliance for relay ${relayNumber} with ID: ${appliance.id}`);
@@ -160,7 +177,7 @@ app.post('/api/sensor-data', async (req, res) => {
       }
 
       records.push({
-        applianceId: appliance.id,
+     applianceId: relayNumber,
         current: r.current || 0,
         voltage: 230,
         power: r.power || 0,
