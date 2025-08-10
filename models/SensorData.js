@@ -1,4 +1,6 @@
 // models/SensorData.js
+const { DataTypes } = require('sequelize');
+
 module.exports = (sequelize) => {
   const SensorData = sequelize.define('SensorData', {
     applianceId: { type: DataTypes.INTEGER, allowNull: false },
@@ -8,26 +10,27 @@ module.exports = (sequelize) => {
     energy: { type: DataTypes.FLOAT },
     cost: { type: DataTypes.FLOAT },
     timestamp: { type: DataTypes.DATE },
-    // models/SensorData.js
-deviceId: {
+    deviceId: {
   type: DataTypes.STRING,
   allowNull: false,
   references: {
     model: 'Device',
-    key: 'device_id'
+    key: 'deviceId' // matches actual column name
   }
 }
-    }
   }, {
     tableName: 'SensorData',
     timestamps: true,
     paranoid: true,
-    underscored: true // ← Fixed typo: was "underscoreed"
+    underscored: true
   });
 
   SensorData.associate = function(models) {
     SensorData.belongsTo(models.Appliance, { foreignKey: 'applianceId' });
-    SensorData.belongsTo(models.Device, { foreignKey: 'deviceId' });
+    SensorData.belongsTo(models.Device, {
+      foreignKey: 'deviceId',
+      targetKey: 'deviceId'    // ← Required because Device uses non-id PK
+    });
   };
 
   return SensorData;
