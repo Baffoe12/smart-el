@@ -126,55 +126,45 @@ app.post('/api/sensor-data', async (req, res) => {
       }
 
       // Ensure appliance exists for this relay
-      let appliance = await Appliance.findOne({
-        where: { relay: relayNumber },
-        paranoid: false
-      });
+    // 🔒 Enforce: appliance.id MUST equal relay number
+const expectedId = relayNumber;
 
-     if (!appliance) {
-  // Force appliance.id = relay number
-  const defaultAppliance = {
-    id: relayNumber,  // ← Explicitly set ID
+// First, delete any appliance that has the wrong ID but correct relay
+await Appliance.destroy({
+  where: {
+    relay: relayNumber,
+    id: { [Op.ne]: expectedId }
+  },
+  force: true,
+  individualHooks: true
+});
+
+// Now find or create with correct ID
+let appliance = await Appliance.findOne({
+  where: { id: expectedId },
+  paranoid: false
+});
+
+if (!appliance) {
+  // Create with correct ID
+  appliance = await Appliance.create({
+    id: expectedId,
     name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
     type: 'power',
     relay: relayNumber,
     status: 'off',
     manuallyAdded: false
-  };
-
-  try {
-    appliance = await Appliance.create(defaultAppliance);
-    console.log(`🆕 Created appliance with ID=${relayNumber}`);
-  } catch (createErr) {
-    if (createErr.name === 'SequelizeUniqueConstraintError') {
-      console.warn(`ID ${relayNumber} taken, falling back to auto-create`);
-      // Fallback if ID conflict
-      appliance = await Appliance.create({
-        name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
-        type: 'power',
-        relay: relayNumber,
-        status: 'off',
-        manuallyAdded: false
-      });
-    } else {
-      throw createErr;
-    }
-  }
+  });
+  console.log(`🆕 Created appliance ID=${expectedId}`);
 } else if (appliance.deletedAt) {
-        // Restore if soft-deleted
-        await appliance.restore();
-        console.log(`↩️ Auto-restored appliance for relay ${relayNumber} with ID: ${appliance.id}`);
-      }
-
+  await appliance.restore();
+  console.log(`↩️ Restored appliance ID=${expectedId}`);
+}
       if (!appliance) {
         console.error(`❌ Failed to create/restore appliance for relay ${relayNumber}`);
         continue;
       }
 
-      // Ensure we have a valid appliance ID
-      if (!appliance.id || appliance.id > 10) {
-        console.warn(`⚠️ Appliance ID ${appliance.id} for relay ${relayNumber} seems unusual, checking...`);
-      }
 
       records.push({
      applianceId: relayNumber,
@@ -187,10 +177,19 @@ app.post('/api/sensor-data', async (req, res) => {
       });
     }
 
-    const validRecords = records.filter(r => r !== null);
-    if (validRecords.length === 0) {
-      return res.status(400).json({ error: 'No valid sensor data records' });
-    }
+   // 🔒 Final Validation: Ensure all applianceIds exist in DB
+const applianceRows = await Appliance.unscoped().findAll({
+  where: { id: records.map(r => r.applianceId) },
+  attributes: ['id'],
+  raw: true
+});
+
+const applianceIds = applianceRows.map(r => r.id);
+const validRecords = records.filter(r => applianceIds.includes(r.applianceId));
+
+if (validRecords.length === 0) {
+  return res.status(400).json({ error: 'No valid appliance IDs found' });
+}
 
     // ✅ Update or create device
     await Device.findOrCreate({
@@ -713,18 +712,16 @@ for (const def of defaultAppliances) {
   } else if (existing.deletedAt) {
     await existing.restore();
     console.log(`↩️ Restored: ${def.name}`);
-  } else {
-    // Update name if changed (e.g., from "Rice Cooker" → "Socket A")
-    if (existing.name !== def.name) {
-      await existing.update({ name: def.name });
-      console.log(`📝 Updated: ${existing.name} → ${def.name}`);
-    }
-    console.log(`✅ Active: ${def.name}`);
+  } else if (existing.name !== def.name) {
+    await existing.update({ name: def.name });
+    console.log(`📝 Updated: ${existing.name} → ${def.name}`);
   }
+  console.log(`✅ Active: ${def.name}`);
 }
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${port}`);
-  });
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${port}`);
+});
 } catch (err) {
   console.error('❌ Failed to start server:', err);
     process.exit(1);
