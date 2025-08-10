@@ -592,23 +592,26 @@ async function startServer() {
       { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
       { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
     ];
-
-  for (const appliance of defaultAppliances) {
+for (const appliance of defaultAppliances) {
   const existing = await Appliance.findOne({
-    where: { relay: appliance.relay }, // Use `relay` as unique identifier
+    where: { relay: appliance.relay },
     paranoid: false
   });
 
   if (!existing) {
+    // Brand new
     await Appliance.create(appliance);
     console.log(`🆕 Created: ${appliance.name}`);
   } else if (existing.deletedAt) {
-    console.log(`⏭️ Skipped (soft-deleted): ${appliance.name}`);
+    // Soft-deleted → restore it
+    await Appliance.restore({ where: { id: existing.id } });
+    await existing.update({ status: 'off' }); // Reset state
+    console.log(`↩️ Restored: ${appliance.name}`);
   } else {
-    console.log(`🔁 Already exists: ${appliance.name}`);
+    // Already active
+    console.log(`✅ Active: ${appliance.name}`);
   }
 }
-
   app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${port}`);
   });
