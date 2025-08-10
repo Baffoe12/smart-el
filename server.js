@@ -431,6 +431,20 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     res.status(500).json({ error: 'Control failed' });
   }
 });
+app.put('/api/appliances/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, type } = req.body;
+
+  try {
+    const appliance = await Appliance.findByPk(id, { paranoid: false });
+    if (!appliance) return res.status(404).json({ error: 'Not found' });
+
+    await appliance.update({ name, type });
+    res.json(appliance.toJSON());
+  } catch (err) {
+    res.status(500).json({ error: 'Update failed' });
+  }
+});
 
 // === SCHEDULING (Dynamic IP) ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
