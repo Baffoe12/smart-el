@@ -389,7 +389,6 @@ app.post('/api/appliances', async (req, res) => {
 });
 
 // DELETE - Soft delete
-// DELETE - Prevent deletion of default sockets
 app.delete('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -399,21 +398,16 @@ app.delete('/api/appliances/:id', async (req, res) => {
       return res.status(404).json({ error: 'Appliance not found' });
     }
 
-    // ✅ Block deletion of default sockets (relay 1–4)
-    if ([1, 2, 3, 4].includes(appliance.relay)) {
-      return res.status(403).json({
-        error: `Socket ${String.fromCharCode(64 + appliance.relay)} cannot be deleted.`
-      });
-    }
-
     await appliance.destroy();
     console.log(`🗑️ Appliance ${id} soft-deleted`);
+
     res.json({ message: 'Appliance deleted (soft)' });
   } catch (err) {
     console.error('Delete failed:', err);
     res.status(500).json({ error: 'Delete failed' });
   }
 });
+
 // RESTORE - Bring back deleted appliance
 app.post('/api/appliances/:id/restore', async (req, res) => {
   const { id } = req.params;
