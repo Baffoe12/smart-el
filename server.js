@@ -59,63 +59,94 @@ app.post('/api/sensor-data', async (req, res) => {
 
   console.log('📦 Parsed relays:', relays);
 
+  // ✅ Define default appliances
+  const defaultAppliances = [
+    { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
+    { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
+    { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
+    { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
+  ];
+
   try {
-    // 🔒 Only accept data if appliance exists AND is not deleted
-   // Validate: each relay must have a matching appliance
-for (const r of relays) {
-  const relayNumber = parseInt(r.relay, 10); // ✅ Read "relay", not "id"
-  if (isNaN(relayNumber)) {
-    return res.status(400).json({ error: `Invalid relay number: ${r.relay}` });
-  }
+    // ✅ Step 1: Ensure all default appliances exist (restore if soft-deleted)
+    for (const def of defaultAppliances) {
+      let appliance = await Appliance.findOne({
+        where: { relay: def.relay },
+        paranoid: false
+      });
 
-  const appliance = await Appliance.findOne({
-    where: { relay: relayNumber }, // ✅ Search by relay number
-    paranoid: false
-  });
+      if (!appliance) {
+        // Create if doesn't exist
+        appliance = await Appliance.create(def);
+        console.log(`🆕 Auto-created: ${def.name}`);
+      } else if (appliance.deletedAt) {
+        // Restore if soft-deleted
+        await appliance.restore();
+        console.log(`↩️ Auto-restored: ${def.name}`);
+      }
 
-  if (!appliance || appliance.deletedAt) {
-    console.warn(`❌ Appliance for relay ${relayNumber} not found or deleted`);
-    return res.status(400).json({
-      error: `Appliance for relay ${relayNumber} not found or was deleted.`
-    });
-  }
-}
+      // Ensure correct name (in case user renamed)
+      if (appliance.name !== def.name) {
+        await appliance.update({ name: def.name });
+        console.log(`📝 Name reset: ${appliance.name} → ${def.name}`);
+      }
+    }
 
-const records = await Promise.all(relays.map(async r => {
-  const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
-  const date = new Date(validTimestamp);
+    // ✅ Step 2: Validate relays exist and are active
+    for (const r of relays) {
+      const relayNumber = parseInt(r.relay, 10);
+      if (isNaN(relayNumber)) {
+        return res.status(400).json({ error: `Invalid relay number: ${r.relay}` });
+      }
 
-  if (isNaN(date.getTime())) {
-    console.warn('Invalid timestamp for relay:', r);
-    return null;
-  }
+      const appliance = await Appliance.findOne({
+        where: { relay: relayNumber },
+        paranoid: false
+      });
 
-  // Get the appliance to use its real DB ID
-  const relayNumber = parseInt(r.relay, 10);
-  const appliance = await Appliance.findOne({
-    where: { relay: relayNumber },
-    paranoid: false
-  });
+      if (!appliance || appliance.deletedAt) {
+        // This should never happen due to above loop
+        return res.status(400).json({
+          error: `Appliance for relay ${relayNumber} is missing or deleted.`
+        });
+      }
+    }
 
-  if (!appliance || appliance.deletedAt) return null; // Should never happen due to earlier check
+    // ✅ Step 3: Create sensor records
+    const records = await Promise.all(relays.map(async r => {
+      const relayNumber = parseInt(r.relay, 10);
+      const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
+      const date = new Date(validTimestamp);
 
-  return {
-    applianceId: appliance.id, // ✅ Real database ID
-    current: r.current || 0,
-    voltage: 230,
-    power: r.power || 0,
-    energy: r.energy_kwh || 0,
-    cost: r.cost_ghs || 0,
-    timestamp: date
-    // ❌ Remove: deviceId: device_id (not part of SensorData)
-  };
-}));
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid timestamp for relay:', r);
+        return null;
+      }
+
+      const appliance = await Appliance.findOne({
+        where: { relay: relayNumber },
+        paranoid: false
+      });
+
+      if (!appliance || appliance.deletedAt) return null;
+
+      return {
+        applianceId: appliance.id,
+        current: r.current || 0,
+        voltage: 230,
+        power: r.power || 0,
+        energy: r.energy_kwh || 0,
+        cost: r.cost_ghs || 0,
+        timestamp: date
+      };
+    }));
+
     const validRecords = records.filter(r => r !== null);
     if (validRecords.length === 0) {
       return res.status(400).json({ error: 'No valid sensor data records' });
     }
 
-    // ✅ Update or create device with latest IP
+    // ✅ Update or create device
     await Device.findOrCreate({
       where: { deviceId: device_id },
       defaults: { ip, lastSeen: new Date() }
@@ -308,17 +339,35 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// === APPLIANCES ===
+// === GET APPLIANCES – Always include default sockets ===
 app.get('/api/appliances', async (req, res) => {
+  const defaultAppliances = [
+    { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
+    { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
+    { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
+    { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
+  ];
+
   try {
-    const appliances = await Appliance.findAll();
-    res.json(appliances.map(a => ({ ...a.toJSON(), applianceId: a.id })));
+    // Get all non-deleted appliances
+    const appliances = await Appliance.findAll({ where: { deletedAt: null } });
+    const applianceMap = {};
+    appliances.forEach(a => {
+      applianceMap[a.relay] = a;
+    });
+
+    // Merge with defaults: always show Socket A–D
+    const merged = defaultAppliances.map(def => {
+      const found = applianceMap[def.relay];
+      return found ? found : { ...def, id: null, createdAt: new Date(), updatedAt: new Date() };
+    });
+
+    res.json(merged);
   } catch (err) {
     console.error('Fetch appliances error:', err);
     res.status(500).json({ error: 'Failed to fetch appliances' });
   }
 });
-
 app.post('/api/appliances', async (req, res) => {
   const { name, type, relay } = req.body;
   if (!type || !relay) {
@@ -340,6 +389,7 @@ app.post('/api/appliances', async (req, res) => {
 });
 
 // DELETE - Soft delete
+// DELETE - Prevent deletion of default sockets
 app.delete('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -349,16 +399,21 @@ app.delete('/api/appliances/:id', async (req, res) => {
       return res.status(404).json({ error: 'Appliance not found' });
     }
 
+    // ✅ Block deletion of default sockets (relay 1–4)
+    if ([1, 2, 3, 4].includes(appliance.relay)) {
+      return res.status(403).json({
+        error: `Socket ${String.fromCharCode(64 + appliance.relay)} cannot be deleted.`
+      });
+    }
+
     await appliance.destroy();
     console.log(`🗑️ Appliance ${id} soft-deleted`);
-
     res.json({ message: 'Appliance deleted (soft)' });
   } catch (err) {
     console.error('Delete failed:', err);
     res.status(500).json({ error: 'Delete failed' });
   }
 });
-
 // RESTORE - Bring back deleted appliance
 app.post('/api/appliances/:id/restore', async (req, res) => {
   const { id } = req.params;
