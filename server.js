@@ -389,16 +389,16 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       include: [
         {
           model: Device,
-          as: 'Device' // ✅ Required because of `as: 'Device'` in association
+          as: 'device' // ✅ Matches `as: 'device'` in association
         }
       ]
     });
 
-    if (!latestData || !latestData.Device) {
+    if (!latestData || !latestData.device) {
       return res.status(404).json({ error: 'No device linked to this appliance' });
     }
 
-    const deviceIp = latestData.Device.ip;
+    const deviceIp = latestData.device.ip;
     const state = action === 'on' ? 1 : 0;
     const url = `http://${deviceIp}/relay?relay=${appliance.relay}&state=${state}`;
 
@@ -451,42 +451,55 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     const delayOn = onDate - Date.now();
     const delayOff = offDate - Date.now();
 
-    // ✅ Get device IP at execution time
+    // ✅ Define getDeviceIp once
     const getDeviceIp = async () => {
       const latestData = await SensorData.findOne({
         where: { applianceId: id },
         order: [['timestamp', 'DESC']],
-        include: [Device]
+        include: [
+          {
+            model: Device,
+            as: 'device'
+          }
+        ]
       });
-      return latestData?.Device?.ip || '172.20.10.3'; // fallback only
+      return latestData?.device?.ip || '172.20.10.3';
     };
 
+    // Schedule ON
     if (delayOn > 0) {
       setTimeout(async () => {
         try {
           const ip = await getDeviceIp();
           const url = `http://${ip}/relay?relay=${appliance.relay}&state=1`;
           await axios.get(url, { timeout: 5000 });
-        } catch (err) { console.error('ON failed:', err.message); }
+          console.log(`✅ Scheduled ON for relay ${appliance.relay}`);
+        } catch (err) {
+          console.error('Scheduled ON failed:', err.message);
+        }
       }, delayOn);
     }
 
+    // Schedule OFF
     if (delayOff > 0) {
       setTimeout(async () => {
         try {
           const ip = await getDeviceIp();
           const url = `http://${ip}/relay?relay=${appliance.relay}&state=0`;
           await axios.get(url, { timeout: 5000 });
-        } catch (err) { console.error('OFF failed:', err.message); }
+          console.log(`✅ Scheduled OFF for relay ${appliance.relay}`);
+        } catch (err) {
+          console.error('Scheduled OFF failed:', err.message);
+        }
       }, delayOff);
     }
 
     res.json({ message: 'Scheduled', appliance });
   } catch (err) {
+    console.error('Schedule failed:', err);
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
-
 app.delete('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   try {
