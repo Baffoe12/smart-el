@@ -41,4 +41,23 @@ const SensorData = sequelize.define('SensorData', {
   deviceId: Sequelize.STRING
 });
 
-module.exports = { sequelize, User, Appliance, SensorData };
+const Device = sequelize.define('Device', {
+  deviceId: {
+    type: Sequelize.STRING,
+    allowNull: false,
+    unique: true
+  },
+  ip: {
+    type: Sequelize.STRING,
+    allowNull: false
+  },
+  lastSeen: {
+    type: Sequelize.DATE
+  }
+});
+
+// Set up associations
+Device.hasMany(SensorData, { foreignKey: 'deviceId', as: 'sensorData' });
+SensorData.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
+
+module.exports = { sequelize, User, Appliance, SensorData, Device };
