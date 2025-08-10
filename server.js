@@ -557,33 +557,33 @@ async function startServer() {
 
     // Seed default appliances
     const defaultAppliances = [
-      { id: 1, name: 'Socket A', type: 'Cooling', relay: 1, status: 'off', manuallyAdded: false },
-      { id: 2, name: 'Socket B', type: 'Cooling', relay: 2, status: 'off', manuallyAdded: false },
-      { id: 3, name: 'Socket C', type: 'Laundry', relay: 3, status: 'off', manuallyAdded: false },
-      { id: 4, name: 'Socket D', type: 'Cooking', relay: 4, status: 'off', manuallyAdded: false }
+      { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
+      { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
+      { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
+      { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
     ];
 
-    for (const appliance of defaultAppliances) {
-      const existing = await Appliance.findOne({
-        where: { id: appliance.id },
-        paranoid: false
-      });
+  for (const appliance of defaultAppliances) {
+  const existing = await Appliance.findOne({
+    where: { relay: appliance.relay }, // Use `relay` as unique identifier
+    paranoid: false
+  });
 
-      if (!existing) {
-        await Appliance.create(appliance);
-        console.log(`🆕 Created default: ${appliance.name}`);
-      } else if (existing.deletedAt) {
-        console.log(`⏭️ Skipped (deleted): ${appliance.name}`);
-      } else {
-        console.log(`🔁 Exists: ${appliance.name}`);
-      }
-    }
+  if (!existing) {
+    await Appliance.create(appliance);
+    console.log(`🆕 Created: ${appliance.name}`);
+  } else if (existing.deletedAt) {
+    console.log(`⏭️ Skipped (soft-deleted): ${appliance.name}`);
+  } else {
+    console.log(`🔁 Already exists: ${appliance.name}`);
+  }
+}
 
-    app.listen(port, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${port}`);
-    });
-  } catch (err) {
-    console.error('❌ Failed to start server:', err);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${port}`);
+  });
+} catch (err) {
+  console.error('❌ Failed to start server:', err);
     process.exit(1);
   }
 }
