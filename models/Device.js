@@ -3,13 +3,12 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Device = sequelize.define('Device', {
-    // models/Device.js
-deviceId: {
-  type: DataTypes.STRING,
-  primaryKey: true,
-  allowNull: false
-  // Remove `field: 'device_id'` for now
-},
+    deviceId: {
+      type: DataTypes.STRING,
+      primaryKey: true,
+      allowNull: false,
+      field: 'device_id'
+    },
     ip: {
       type: DataTypes.STRING,
       allowNull: false
@@ -21,13 +20,14 @@ deviceId: {
   }, {
     tableName: 'Devices',
     timestamps: true,
-    underscored: true // maps camelCase to snake_case
+    paranoid: true,
+    underscored: true
   });
 
   Device.associate = function(models) {
     Device.hasMany(models.SensorData, {
       foreignKey: 'deviceId',
-      targetKey: 'deviceId', // ← Important: since referencing non-id PK
+      sourceKey: 'deviceId',
       as: 'sensorData'
     });
   };
