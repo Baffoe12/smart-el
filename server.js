@@ -123,12 +123,34 @@ app.post('/api/sensor-data', async (req, res) => {
         return null;
       }
 
-      const appliance = await Appliance.findOne({
+      // Ensure appliance exists for this relay
+      let appliance = await Appliance.findOne({
         where: { relay: relayNumber },
         paranoid: false
       });
 
-      if (!appliance || appliance.deletedAt) return null;
+      if (!appliance) {
+        // Create appliance if it doesn't exist
+        const defaultAppliance = {
+          name: `Socket ${String.fromCharCode(64 + relayNumber)}`,
+          type: 'power',
+          relay: relayNumber,
+          status: 'off',
+          manuallyAdded: false
+        };
+        
+        appliance = await Appliance.create(defaultAppliance);
+        console.log(`🆕 Auto-created appliance for relay ${relayNumber}`);
+      } else if (appliance.deletedAt) {
+        // Restore if soft-deleted
+        await appliance.restore();
+        console.log(`↩️ Auto-restored appliance for relay ${relayNumber}`);
+      }
+
+      if (!appliance) {
+        console.error(`❌ Failed to create/restore appliance for relay ${relayNumber}`);
+        return null;
+      }
 
       return {
         applianceId: appliance.id,
