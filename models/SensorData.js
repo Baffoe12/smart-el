@@ -6,7 +6,11 @@ module.exports = (sequelize) => {
     applianceId: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      field: 'appliance_id'
+      field: 'appliance_id',
+      references: {
+        model: 'Appliances',
+        key: 'id'
+      }
     },
     deviceId: {
       type: DataTypes.STRING,
@@ -22,9 +26,23 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'SensorData',
     timestamps: true,
-    paranoid: true,     // ← Only if you add `deleted_at`
-    underscored: true   // ← Use snake_case
+    paranoid: false,   // ✅ Disable soft delete
+    underscored: true  // Use snake_case
   });
+
+  // ✅ Add association (optional)
+  SensorData.associate = function(models) {
+    SensorData.belongsTo(models.Appliance, {
+      foreignKey: 'appliance_id',
+      as: 'appliance'
+    });
+    SensorData.belongsTo(models.Device, {
+      foreignKey: 'device_id',
+      as: 'device'
+    });
+  };
 
   return SensorData;
 };
+
+//chanage 
