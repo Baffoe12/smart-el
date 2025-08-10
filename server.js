@@ -9,6 +9,16 @@ const axios = require('axios');
 const { Op } = require('sequelize');
 const { sequelize, User, Appliance, SensorData, Device } = require('./models');
 
+// === Validate Critical Environment Variables ===
+if (!process.env.JWT_SECRET) {
+  console.error('❌ Missing JWT_SECRET environment variable');
+  process.exit(1);
+}
+if (!process.env.DATABASE_URL) {
+  console.error('❌ Missing DATABASE_URL environment variable');
+  process.exit(1);
+}
+
 // Set up associations
 Object.values(sequelize.models)
   .filter(model => typeof model.associate === 'function')
@@ -26,6 +36,11 @@ app.use(bodyParser.text({ type: 'text/plain' }));
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
+});
+
+// === HEALTH CHECK ===
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
 // === SENSOR DATA INGESTION ===
@@ -49,13 +64,14 @@ app.post('/api/sensor-data', async (req, res) => {
     for (const r of relays) {
       const applianceId = parseInt(r.id, 10);
       const appliance = await Appliance.findOne({
-        where: { id: applianceId }
+        where: { id: applianceId },
+        paranoid: false // Include soft-deleted
       });
 
-      if (!appliance) {
+      if (!appliance || appliance.deletedAt) {
         console.warn(`❌ Appliance ${applianceId} not found or was deleted — rejecting`);
         return res.status(400).json({
-          error: `Appliance ${applianceId} not found. Please re-add it manually if needed.`
+          error: `Appliance ${applianceId} not found or was deleted.`
         });
       }
     }
@@ -78,9 +94,7 @@ app.post('/api/sensor-data', async (req, res) => {
         energy: r.energy_kwh || 0,
         cost: r.cost_ghs || 0,
         timestamp: date,
-        deviceId: device_id,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        deviceId: device_id
       };
     });
 
@@ -241,6 +255,7 @@ app.post('/api/signup', async (req, res) => {
 
     res.status(201).json({ token, user: { id: user.id, name, email } });
   } catch (err) {
+    console.error('Signup failed:', err);
     res.status(500).json({ error: 'Signup failed' });
   }
 });
@@ -266,6 +281,7 @@ app.post('/api/login', async (req, res) => {
 
     res.json({ token, user: { id: user.id, name: user.name, email } });
   } catch (err) {
+    console.error('Login failed:', err);
     res.status(500).json({ error: 'Login failed' });
   }
 });
@@ -525,8 +541,9 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-console.log('✅ Skipping auto-sync. Use migrations for schema changes.');
-// await sequelize.sync(); // Use this only to create tables if they don't exist
+    // Sync models (safe: no alter/drop)
+    await sequelize.sync({ force: false });
+    console.log('✅ Database tables synchronized');
 
     // Ensure device exists
     await Device.findOrCreate({
@@ -540,10 +557,10 @@ console.log('✅ Skipping auto-sync. Use migrations for schema changes.');
 
     // Seed default appliances
     const defaultAppliances = [
-      { id: 1, name: 'Air Conditioner', type: 'Cooling', relay: 1, status: 'off', manuallyAdded: false },
-      { id: 2, name: 'Refrigerator',    type: 'Cooling', relay: 2, status: 'off', manuallyAdded: false },
-      { id: 3, name: 'Washing Machine', type: 'Laundry', relay: 3, status: 'off', manuallyAdded: false },
-      { id: 4, name: 'Microwave',       type: 'Cooking', relay: 4, status: 'off', manuallyAdded: false }
+      { id: 1, name: 'Socket A', type: 'Cooling', relay: 1, status: 'off', manuallyAdded: false },
+      { id: 2, name: 'Socket B', type: 'Cooling', relay: 2, status: 'off', manuallyAdded: false },
+      { id: 3, name: 'Socket C', type: 'Laundry', relay: 3, status: 'off', manuallyAdded: false },
+      { id: 4, name: 'Socket D', type: 'Cooking', relay: 4, status: 'off', manuallyAdded: false }
     ];
 
     for (const appliance of defaultAppliances) {
