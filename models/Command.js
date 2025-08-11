@@ -25,13 +25,20 @@ module.exports = (sequelize, DataTypes) => {
     paranoid: true
   });
 
-  // ✅ Define association ONLY here
   Command.associate = function(models) {
+    // ✅ Prevent duplicate association
+    if (Command.associations.commandDevice) {
+      console.log('🔁 Association "commandDevice" already exists. Skipping.');
+      return;
+    }
+
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
       targetKey: 'deviceId',
-      as: 'commandDevice'  // ✅ Unique alias
+      as: 'commandDevice'
     });
+
+    console.log('✅ Defined Command -> Device (as: commandDevice)');
   };
 
   return Command;
