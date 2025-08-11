@@ -1,6 +1,6 @@
-// models/index.js
 const { Sequelize } = require('sequelize');
 
+// Initialize Sequelize
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   dialectOptions: {
@@ -18,7 +18,7 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   logging: process.env.NODE_ENV === 'development' ? console.log : false
 });
 
-// === MODELS ===
+// === DEFINE MODELS ===
 
 const User = sequelize.define('User', {
   name: { type: Sequelize.STRING },
@@ -59,7 +59,7 @@ const Appliance = sequelize.define('Appliance', {
 const Device = sequelize.define('Device', {
   deviceId: {
     type: Sequelize.STRING,
-    primaryKey: true, // ✅ Make this the PK
+    primaryKey: true,
     allowNull: false
   },
   ip: {
@@ -100,7 +100,7 @@ const SensorData = sequelize.define('SensorData', {
     allowNull: false,
     references: {
       model: 'Device',
-      key: 'deviceId' // References the PK of Device
+      key: 'deviceId'
     },
     field: 'device_id'
   }
@@ -111,17 +111,28 @@ const SensorData = sequelize.define('SensorData', {
   paranoid: true
 });
 
-// === ASSOCIATIONS ===
+// === COLLECT MODELS INTO OBJECT ===
+const models = {
+  User,
+  Appliance,
+  Device,
+  SensorData
+};
 
+// === COMMAND MODEL (requires models object) ===
+const Command = require('./Command')(sequelize, Sequelize.DataTypes);
+models.Command = Command;
+
+// === ASSOCIATIONS ===
 Device.hasMany(SensorData, {
   foreignKey: 'deviceId',
-  sourceKey: 'deviceId', // Required since not using `id`
+  sourceKey: 'deviceId',
   as: 'sensorData'
 });
 
 SensorData.belongsTo(Device, {
   foreignKey: 'deviceId',
-  targetKey: 'deviceId', // ✅ Critical: tells Sequelize to reference `deviceId`, not `id`
+  targetKey: 'deviceId',
   as: 'device'
 });
 
@@ -134,7 +145,20 @@ Appliance.hasMany(SensorData, {
   foreignKey: 'applianceId'
 });
 
-// Optional: User associations
-// User.hasMany(Appliance, { foreignKey: 'userId' });
+// Optional: Command belongs to Device
+if (models.Command) {
+  Device.hasMany(models.Command, {
+    foreignKey: 'deviceId',
+    sourceKey: 'deviceId',
+    as: 'commands'
+  });
 
-module.exports = { sequelize, User, Appliance, SensorData, Device };
+  models.Command.belongsTo(Device, {
+    foreignKey: 'deviceId',
+    targetKey: 'deviceId',
+    as: 'device'
+  });
+}
+
+// === EXPORT ===
+module.exports = models;

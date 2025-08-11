@@ -5,11 +5,10 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const axios = require('axios');
 const { Op } = require('sequelize');
-const { sequelize, User, Appliance, SensorData, Device } = require('./models');
+const { sequelize, User, Appliance, SensorData, Device, Command } = require('./models');
 
-// === Validate Critical Environment Variables ===
+// === Validate Environment Variables ===
 if (!process.env.JWT_SECRET) {
   console.error('❌ Missing JWT_SECRET environment variable');
   process.exit(1);
@@ -40,13 +39,15 @@ app.use((req, res, next) => {
 
 // === HEALTH CHECK ===
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    message: 'Smart Energy Monitor API is running'
+  });
 });
 
 // === SENSOR DATA INGESTION ===
 app.post('/api/sensor-data', async (req, res) => {
-  console.log('📥 RAW Body:', req.body);
-
   const { device_id, ip, timestamp, relays } = req.body;
 
   if (!device_id || !ip) {
@@ -56,8 +57,6 @@ app.post('/api/sensor-data', async (req, res) => {
   if (!relays || !Array.isArray(relays)) {
     return res.status(400).json({ error: 'Invalid or missing relays array' });
   }
-
-  console.log('📦 Parsed relays:', relays);
 
   try {
     const records = [];
@@ -72,24 +71,17 @@ app.post('/api/sensor-data', async (req, res) => {
         continue;
       }
 
-      // 🔒 Enforce: appliance.id MUST equal relay number
+      // Enforce: appliance.id === relay number
       const expectedId = relayNumber;
 
-      // Delete any appliance with correct relay but wrong ID
+      // Clean up any misconfigured appliances
       await Appliance.destroy({
-        where: {
-          relay: relayNumber,
-          id: { [Op.ne]: expectedId }
-        },
-        force: true,
-        individualHooks: true
+        where: { relay: relayNumber, id: { [Op.ne]: expectedId } },
+        force: true
       });
 
       // Find or create appliance with correct ID
-      let appliance = await Appliance.findOne({
-        where: { id: expectedId },
-        paranoid: false
-      });
+      let appliance = await Appliance.findOne({ where: { id: expectedId }, paranoid: false });
 
       if (!appliance) {
         appliance = await Appliance.create({
@@ -106,12 +98,8 @@ app.post('/api/sensor-data', async (req, res) => {
         console.log(`↩️ Restored appliance ID=${expectedId}`);
       }
 
-      if (!appliance) {
-        console.error(`❌ Failed to create/restore appliance for relay ${relayNumber}`);
-        continue;
-      }
+      if (!appliance) continue;
 
-      // ✅ Use actual appliance.id
       records.push({
         applianceId: appliance.id,
         current: r.current || 0,
@@ -119,30 +107,28 @@ app.post('/api/sensor-data', async (req, res) => {
         power: r.power || 0,
         energy: r.energy_kwh || 0,
         cost: r.cost_ghs || 0,
-        timestamp: date
+        timestamp: date,
+        deviceId: device_id
       });
     }
 
-    // 🔒 Final Validation: Ensure all applianceIds exist in DB
-    const applianceRows = await Appliance.unscoped().findAll({
+    // Validate appliance IDs
+    const validApplianceIds = (await Appliance.unscoped().findAll({
       where: { id: records.map(r => r.applianceId) },
       attributes: ['id'],
       raw: true
-    });
+    })).map(a => a.id);
 
-    const applianceIds = applianceRows.map(r => r.id);
-    const validRecords = records.filter(r => applianceIds.includes(r.applianceId));
-
+    const validRecords = records.filter(r => validApplianceIds.includes(r.applianceId));
     if (validRecords.length === 0) {
       return res.status(400).json({ error: 'No valid appliance IDs found' });
     }
 
-    // ✅ Update or create device
+    // Register or update device
     await Device.findOrCreate({
       where: { deviceId: device_id },
       defaults: { ip, lastSeen: new Date() }
     });
-
     await Device.update(
       { ip, lastSeen: new Date() },
       { where: { deviceId: device_id } }
@@ -173,6 +159,7 @@ app.get('/api/sensor-data/latest', async (req, res) => {
     const maxTimestamps = latest.map(e => e.maxTimestamp);
     const data = await SensorData.findAll({
       where: { timestamp: { [Op.in]: maxTimestamps } },
+      include: [{ model: Device, as: 'device' }],
       order: [['applianceId', 'ASC']]
     });
 
@@ -186,26 +173,26 @@ app.get('/api/sensor-data/latest', async (req, res) => {
 // === GET SENSOR DATA WITH PAGINATION ===
 app.get('/api/sensor-data', async (req, res) => {
   const { limit = 100, offset = 0, deviceId, startDate, endDate } = req.query;
-  
-  try {
-    const whereClause = {};
-    
-    if (deviceId) whereClause.deviceId = deviceId;
-    if (startDate || endDate) {
-      whereClause.timestamp = {};
-      if (startDate) whereClause.timestamp[Op.gte] = new Date(startDate);
-      if (endDate) whereClause.timestamp[Op.lte] = new Date(endDate);
-    }
+  const whereClause = {};
 
+  if (deviceId) whereClause.deviceId = deviceId;
+  if (startDate || endDate) {
+    whereClause.timestamp = {};
+    if (startDate) whereClause.timestamp[Op.gte] = new Date(startDate);
+    if (endDate) whereClause.timestamp[Op.lte] = new Date(endDate);
+  }
+
+  try {
     const data = await SensorData.findAll({
       where: whereClause,
       limit: Math.min(parseInt(limit), 1000),
       offset: parseInt(offset),
-      order: [['timestamp', 'DESC']]
+      order: [['timestamp', 'DESC']],
+      include: [{ model: Device, as: 'device' }]
     });
-    
+
     const total = await SensorData.count({ where: whereClause });
-    
+
     res.json({
       data,
       pagination: {
@@ -221,40 +208,159 @@ app.get('/api/sensor-data', async (req, res) => {
   }
 });
 
-// === RELAY CONTROL (using dynamic IP) ===
-app.post('/api/relay-control', async (req, res) => {
-  const { deviceId, relay, state } = req.body;
+// === GET PENDING COMMAND FOR DEVICE ===
+app.get('/api/commands', async (req, res) => {
+  const { device_id } = req.query;
 
-  if (!deviceId) {
-    return res.status(400).json({ error: 'Missing deviceId' });
-  }
-  if (![1,2,3,4].includes(relay)) {
-    return res.status(400).json({ error: 'Invalid relay' });
-  }
-  if (![0,1].includes(state)) {
-    return res.status(400).json({ error: 'Invalid state' });
+  if (!device_id) {
+    return res.status(400).json({ error: 'Missing device_id' });
   }
 
   try {
-    const device = await Device.findOne({ where: { deviceId } });
+    const device = await Device.findOne({ where: { deviceId: device_id } });
     if (!device) {
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    const url = `http://${device.ip}/relay?relay=${relay}&state=${state}`;
-    const response = await axios.get(url, { timeout: 5000 });
+    const command = await Command.findOne({
+      where: {
+        deviceId: device.id,
+        executed: false,
+        expiresAt: { [Op.gt]: new Date() }
+      },
+      order: [['createdAt', 'ASC']]
+    });
 
-    res.json({ 
-      message: 'Command sent', 
-      deviceIp: device.ip,
-      response: response.data 
+    if (command) {
+      // Optional: mark as delivered
+      await command.update({ delivered: true });
+
+      return res.json({
+        relay: command.relay,
+        state: command.state
+      });
+    }
+
+    // No command pending
+    return res.json({});
+  } catch (err) {
+    console.error('Error fetching command:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// === RELAY CONTROL – Queue Command Only (No Direct Call) ===
+app.post('/api/appliances/:id/control', async (req, res) => {
+  const { id } = req.params;
+  const { action } = req.body;
+
+  if (!['on', 'off'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action: use "on" or "off"' });
+  }
+
+  try {
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) return res.status(404).json({ error: 'Appliance not found' });
+
+    if (![1, 2, 3, 4].includes(appliance.relay)) {
+      return res.status(400).json({ error: `Invalid relay number: ${appliance.relay}` });
+    }
+
+    // Get latest device for this appliance
+    const latestData = await SensorData.findOne({
+      where: { applianceId: id },
+      order: [['timestamp', 'DESC']],
+      include: [{ model: Device, as: 'device' }]
     });
-  } catch (error) {
-    console.error('Relay error:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to send command',
-      deviceIp: device?.ip
+
+    const device = latestData?.device;
+    if (!device) {
+      return res.status(400).json({ error: 'No active device found for this appliance' });
+    }
+
+    // ✅ Queue command in DB — ESP32 will poll for it
+    await Command.create({
+      deviceId: device.id,
+      relay: appliance.relay,
+      state: action === 'on',
+      expiresAt: new Date(Date.now() + 300000) // 5 minutes
     });
+
+    console.log(`✅ Queued ${action.toUpperCase()} for Relay ${appliance.relay} (Device: ${device.deviceId})`);
+    res.json({ message: `Command queued to turn ${action}` });
+  } catch (err) {
+    console.error('Control failed:', err);
+    res.status(500).json({ error: 'Failed to queue command' });
+  }
+});
+
+// === SCHEDULING – Queue Future Commands ===
+app.post('/api/appliances/:id/schedule', async (req, res) => {
+  const { id } = req.params;
+  const { onTime, offTime } = req.body;
+
+  if (!onTime || !offTime) {
+    return res.status(400).json({ error: 'onTime and offTime required' });
+  }
+
+  const onDate = new Date(onTime);
+  const offDate = new Date(offTime);
+  if (isNaN(onDate.getTime()) || isNaN(offDate.getTime()) || offDate <= onDate) {
+    return res.status(400).json({ error: 'Invalid time range' });
+  }
+
+  try {
+    const appliance = await Appliance.findByPk(id);
+    if (!appliance) return res.status(404).json({ error: 'Not found' });
+
+    await appliance.update({
+      scheduled: true,
+      scheduleOn: onDate,
+      scheduleOff: offDate
+    });
+
+    // Queue ON command
+    setTimeout(async () => {
+      const latestData = await SensorData.findOne({
+        where: { applianceId: id },
+        order: [['timestamp', 'DESC']],
+        include: [{ model: Device, as: 'device' }]
+      });
+      const device = latestData?.device;
+      if (device) {
+        await Command.create({
+          deviceId: device.id,
+          relay: appliance.relay,
+          state: true,
+          expiresAt: new Date(Date.now() + 300000)
+        });
+        console.log(`✅ Scheduled ON for Relay ${appliance.relay}`);
+      }
+    }, onDate - Date.now());
+
+    // Queue OFF command
+    setTimeout(async () => {
+      const latestData = await SensorData.findOne({
+        where: { applianceId: id },
+        order: [['timestamp', 'DESC']],
+        include: [{ model: Device, as: 'device' }]
+      });
+      const device = latestData?.device;
+      if (device) {
+        await Command.create({
+          deviceId: device.id,
+          relay: appliance.relay,
+          state: false,
+          expiresAt: new Date(Date.now() + 300000)
+        });
+        console.log(`✅ Scheduled OFF for Relay ${appliance.relay}`);
+      }
+    }, offDate - Date.now());
+
+    res.json({ message: 'Scheduled successfully' });
+  } catch (err) {
+    console.error('Schedule failed:', err);
+    res.status(500).json({ error: 'Schedule failed' });
   }
 });
 
@@ -330,250 +436,79 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// === GET APPLIANCES – Always include default sockets ===
+// === APPLIANCES ===
 app.get('/api/appliances', async (req, res) => {
-  const defaultAppliances = [
-    { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
-    { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
-    { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
-    { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
+  const defaults = [
+    { name: 'Socket A', relay: 1 },
+    { name: 'Socket B', relay: 2 },
+    { name: 'Socket C', relay: 3 },
+    { name: 'Socket D', relay: 4 }
   ];
 
   try {
-    const appliances = await Appliance.findAll({ where: { deletedAt: null } });
-    const applianceMap = {};
-    appliances.forEach(a => {
-      applianceMap[a.relay] = a;
-    });
+    const dbAppliances = await Appliance.findAll({ where: { deletedAt: null } });
+    const map = Object.fromEntries(dbAppliances.map(a => [a.relay, a]));
 
-    const merged = defaultAppliances.map(def => {
-      const found = applianceMap[def.relay];
-      return found ? found : { ...def, id: null, createdAt: new Date(), updatedAt: new Date() };
-    });
-
+    const merged = defaults.map(def => map[def.relay] || { ...def, type: 'power', status: 'off', manuallyAdded: false });
     res.json(merged);
   } catch (err) {
-    console.error('Fetch appliances error:', err);
-    res.status(500).json({ error: 'Failed to fetch appliances' });
+    res.status(500).json({ error: 'Fetch failed' });
   }
 });
 
 app.post('/api/appliances', async (req, res) => {
   const { name, type, relay } = req.body;
-  if (!type || !relay) {
-    return res.status(400).json({ error: 'Type and relay are required' });
-  }
+  if (!type || !relay) return res.status(400).json({ error: 'Type and relay required' });
 
   try {
-    const appliance = await Appliance.create({
-      name: name || `Appliance ${relay}`,
-      type,
-      relay,
-      manuallyAdded: true
-    });
-    res.status(201).json({ ...appliance.toJSON(), applianceId: appliance.id });
+    const appliance = await Appliance.create({ name, type, relay, manuallyAdded: true });
+    res.status(201).json(appliance);
   } catch (err) {
-    console.error('Add appliance error:', err);
-    res.status(500).json({ error: 'Add failed' });
+    res.status(500).json({ error: 'Create failed' });
   }
 });
 
-// DELETE - Soft delete
+// Soft delete
 app.delete('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
-
-  try {
-    const appliance = await Appliance.findByPk(id);
-    if (!appliance) {
-      return res.status(404).json({ error: 'Appliance not found' });
-    }
-
-    await appliance.destroy();
-    console.log(`🗑️ Appliance ${id} soft-deleted`);
-
-    res.json({ message: 'Appliance deleted (soft)' });
-  } catch (err) {
-    console.error('Delete failed:', err);
-    res.status(500).json({ error: 'Delete failed' });
-  }
+  const appliance = await Appliance.findByPk(id);
+  if (!appliance) return res.status(404).json({ error: 'Not found' });
+  await appliance.destroy();
+  res.json({ message: 'Deleted' });
 });
 
-// RESTORE - Bring back deleted appliance
+// Restore
 app.post('/api/appliances/:id/restore', async (req, res) => {
   const { id } = req.params;
-
-  try {
-    const appliance = await Appliance.findByPk(id, { paranoid: false });
-    if (!appliance) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    if (!appliance.deletedAt) {
-      return res.status(400).json({ error: 'Already active' });
-    }
-
-    await appliance.restore();
-    console.log(`↩️ Appliance ${id} restored`);
-
-    res.json({ message: 'Restored successfully' });
-  } catch (err) {
-    console.error('Restore failed:', err);
-    res.status(500).json({ error: 'Restore failed' });
-  }
+  const appliance = await Appliance.findByPk(id, { paranoid: false });
+  if (!appliance || !appliance.deletedAt) return res.status(400).json({ error: 'Not soft-deleted' });
+  await appliance.restore();
+  res.json({ message: 'Restored' });
 });
 
-// === RELAY CONTROL (from frontend) ===
-app.post('/api/appliances/:id/control', async (req, res) => {
-  const { id } = req.params;
-  const { action } = req.body;
-  if (!['on', 'off'].includes(action)) {
-    return res.status(400).json({ error: 'Invalid action' });
-  }
-
-  try {
-    const appliance = await Appliance.findByPk(id);
-    if (!appliance) return res.status(404).json({ error: 'Not found' });
-
-    if (![1, 2, 3, 4].includes(appliance.relay)) {
-      return res.status(400).json({ error: `Invalid relay number: ${appliance.relay}` });
-    }
-
-    const latestData = await SensorData.findOne({
-      where: { applianceId: id },
-      order: [['timestamp', 'DESC']],
-      include: [{ model: Device, as: 'device' }]
-    });
-
-    const deviceIp = latestData?.device?.ip || '172.20.10.3';
-    console.log(`Using IP: ${deviceIp} for appliance ${id}`);
-
-    const state = action === 'on' ? 1 : 0;
-    const url = `http://${deviceIp}/relay?relay=${appliance.relay}&state=${state}`;
-
-    try {
-      await axios.get(url, { timeout: 5000 });
-      console.log(`✅ Relay ${appliance.relay} turned ${action} via ${deviceIp}`);
-    } catch (err) {
-      console.warn(`⚠️ Failed to reach ESP32 at ${deviceIp}:`, err.message);
-      return res.status(500).json({ error: 'Failed to reach device', ip: deviceIp });
-    }
-
-    res.json({ message: `Appliance turned ${action}` });
-  } catch (err) {
-    console.error('Control failed:', err);
-    res.status(500).json({ error: 'Control failed' });
-  }
-});
-
+// Update
 app.put('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
   const { name, type } = req.body;
-
-  try {
-    const appliance = await Appliance.findByPk(id, { paranoid: false });
-    if (!appliance) return res.status(404).json({ error: 'Not found' });
-
-    await appliance.update({ name, type });
-    res.json(appliance.toJSON());
-  } catch (err) {
-    res.status(500).json({ error: 'Update failed' });
-  }
+  const appliance = await Appliance.findByPk(id, { paranoid: false });
+  if (!appliance) return res.status(404).json({ error: 'Not found' });
+  await appliance.update({ name, type });
+  res.json(appliance);
 });
 
-// === SCHEDULING ===
-app.post('/api/appliances/:id/schedule', async (req, res) => {
-  const { id } = req.params;
-  const { onTime, offTime } = req.body;
-
-  if (!onTime || !offTime) {
-    return res.status(400).json({ error: 'onTime and offTime required' });
-  }
-
-  const onDate = new Date(onTime);
-  const offDate = new Date(offTime);
-  if (isNaN(onDate.getTime()) || isNaN(offDate.getTime())) {
-    return res.status(400).json({ error: 'Invalid date format' });
-  }
-  if (offDate <= onDate) {
-    return res.status(400).json({ error: 'offTime must be after onTime' });
-  }
-
-  try {
-    const appliance = await Appliance.findByPk(id);
-    if (!appliance) return res.status(404).json({ error: 'Not found' });
-
-    await appliance.update({
-      scheduled: true,
-      scheduleOn: onDate,
-      scheduleOff: offDate
-    });
-
-    const delayOn = onDate - Date.now();
-    const delayOff = offDate - Date.now();
-
-    const getDeviceIp = async () => {
-      const latestData = await SensorData.findOne({
-        where: { applianceId: id },
-        order: [['timestamp', 'DESC']],
-        include: [{ model: Device, as: 'device' }]
-      });
-      return latestData?.device?.ip || '172.20.10.3';
-    };
-
-    if (delayOn > 0) {
-      setTimeout(async () => {
-        try {
-          const ip = await getDeviceIp();
-          const url = `http://${ip}/relay?relay=${appliance.relay}&state=1`;
-          await axios.get(url, { timeout: 5000 });
-          console.log(`✅ Scheduled ON for relay ${appliance.relay}`);
-        } catch (err) {
-          console.error('Scheduled ON failed:', err.message);
-        }
-      }, delayOn);
-    }
-
-    if (delayOff > 0) {
-      setTimeout(async () => {
-        try {
-          const ip = await getDeviceIp();
-          const url = `http://${ip}/relay?relay=${appliance.relay}&state=0`;
-          await axios.get(url, { timeout: 5000 });
-          console.log(`✅ Scheduled OFF for relay ${appliance.relay}`);
-        } catch (err) {
-          console.error('Scheduled OFF failed:', err.message);
-        }
-      }, delayOff);
-    }
-
-    res.json({ message: 'Scheduled', appliance });
-  } catch (err) {
-    console.error('Schedule failed:', err);
-    res.status(500).json({ error: 'Schedule failed' });
-  }
-});
-
+// Cancel schedule
 app.delete('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
-  try {
-    const appliance = await Appliance.findByPk(id);
-    if (!appliance) return res.status(404).json({ error: 'Not found' });
-
-    await appliance.update({
-      scheduled: false,
-      scheduleOn: null,
-      scheduleOff: null
-    });
-
-    res.json({ message: 'Schedule cancelled' });
-  } catch (err) {
-    res.status(500).json({ error: 'Cancel failed' });
-  }
+  const appliance = await Appliance.findByPk(id);
+  if (!appliance) return res.status(404).json({ error: 'Not found' });
+  await appliance.update({ scheduled: false, scheduleOn: null, scheduleOff: null });
+  res.json({ message: 'Cancelled' });
 });
 
-// === OTHER ENDPOINTS ===
+// History
 app.get('/api/appliances/:id/history', async (req, res) => {
   const { id } = req.params;
-  const { range = '7d' } = req.query;
+  const range = req.query.range || '7d';
   const hours = { '1d': 24, '7d': 168, '30d': 720 }[range] || 24;
 
   try {
@@ -586,71 +521,55 @@ app.get('/api/appliances/:id/history', async (req, res) => {
     });
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Fetch history failed' });
+    res.status(500).json({ error: 'Fetch failed' });
   }
 });
 
+// Thresholds
 app.get('/api/thresholds', (req, res) => {
   res.json({ power: 1400 });
 });
 
+// Export
 app.get('/api/export-report', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=report.csv');
   res.setHeader('Content-Type', 'text/csv');
   res.send('timestamp,appliance,current,power,energy,cost\n');
 });
 
-// === 404 HANDLER ===
+// 404
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// ✅ SAFE SERVER STARTUP
+// === START SERVER ===
 async function startServer() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    await sequelize.sync({ force: false });
-    console.log('✅ Database tables synchronized');
+    await sequelize.sync();
+    console.log('✅ Tables synchronized');
 
+    // Ensure default device
     await Device.findOrCreate({
       where: { deviceId: 'SmartBoard_01' },
-      defaults: {
-        deviceId: 'SmartBoard_01',
-        ip: '172.20.10.3',
-        lastSeen: new Date()
-      }
+      defaults: { ip: '0.0.0.0', lastSeen: new Date() }
     });
 
-    const defaultAppliances = [
-      { name: 'Socket A', type: 'power', relay: 1, status: 'off', manuallyAdded: false },
-      { name: 'Socket B', type: 'power', relay: 2, status: 'off', manuallyAdded: false },
-      { name: 'Socket C', type: 'power', relay: 3, status: 'off', manuallyAdded: false },
-      { name: 'Socket D', type: 'power', relay: 4, status: 'off', manuallyAdded: false }
+    // Ensure default sockets
+    const defaults = [
+      { id: 1, name: 'Socket A', relay: 1 },
+      { id: 2, name: 'Socket B', relay: 2 },
+      { id: 3, name: 'Socket C', relay: 3 },
+      { id: 4, name: 'Socket D', relay: 4 }
     ];
 
-    for (const def of defaultAppliances) {
-      const expectedId = def.relay;
-
-      await Appliance.destroy({
-        where: { relay: def.relay, id: { [Op.ne]: expectedId } },
-        force: true
+    for (const def of defaults) {
+      await Appliance.findOrCreate({
+        where: { id: def.id },
+        defaults: { ...def, type: 'power', manuallyAdded: false }
       });
-
-      let appliance = await Appliance.findOne({ where: { id: expectedId }, paranoid: false });
-
-      if (!appliance) {
-        appliance = await Appliance.create(def);
-        console.log(`🆕 Created: ${def.name}`);
-      } else if (appliance.deletedAt) {
-        await appliance.restore();
-        console.log(`↩️ Restored: ${def.name}`);
-      } else if (appliance.name !== def.name) {
-        await appliance.update({ name: def.name });
-        console.log(`📝 Updated: ${appliance.name} → ${def.name}`);
-      }
-      console.log(`✅ Active: ${def.name}`);
     }
 
     app.listen(port, '0.0.0.0', () => {
