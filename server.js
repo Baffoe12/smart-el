@@ -217,10 +217,16 @@ app.get('/api/commands', async (req, res) => {
   }
 
   try {
+    console.log(`🔍 Looking for device: ${device_id}`);
+    
     const device = await Device.findOne({ where: { deviceId: device_id } });
+    
     if (!device) {
+      console.warn(`❌ Device not found: ${device_id}`);
       return res.status(404).json({ error: 'Device not found' });
     }
+
+    console.log(`✅ Found device ID: ${device.id}, IP: ${device.ip}`);
 
     const command = await Command.findOne({
       where: {
@@ -232,20 +238,21 @@ app.get('/api/commands', async (req, res) => {
     });
 
     if (command) {
-      // Optional: mark as delivered
-      await command.update({ delivered: true });
-
+      console.log(`🎉 Pending command: Relay ${command.relay} → ${command.state}`);
       return res.json({
         relay: command.relay,
         state: command.state
       });
     }
 
-    // No command pending
+    console.log(`✅ No pending command for device ${device_id}`);
     return res.json({});
   } catch (err) {
-    console.error('Error fetching command:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('🚨 Error in /api/commands:', err);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      detail: err.message 
+    });
   }
 });
 
