@@ -19,14 +19,13 @@ module.exports = (sequelize, DataTypes) => {
     },
     expiresAt: {
       type: DataTypes.DATE,
-      defaultValue: sequelize.literal('NOW() + INTERVAL 5 MINUTE')
+      defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'") // ✅ Fixed
     }
   }, {
     paranoid: true
   });
 
   Command.associate = function(models) {
-    // ✅ Prevent duplicate association
     if (Command.associations.commandDevice) {
       console.log('🔁 Association "commandDevice" already exists. Skipping.');
       return;
