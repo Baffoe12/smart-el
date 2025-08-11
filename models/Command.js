@@ -29,7 +29,7 @@ module.exports = (sequelize, DataTypes) => {
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
       targetKey: 'deviceId',
-      as: 'commandDevice'  // ✅ Unique alias
+      as: 'commandDevice'
     });
   };
 
