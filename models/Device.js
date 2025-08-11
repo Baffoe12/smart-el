@@ -1,28 +1,24 @@
-// models/Device.js
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
-  const Device = sequelize.define('Device', {
-    deviceId: {
-      type: DataTypes.STRING,
-      primaryKey: true,
-      allowNull: false,
-      field: 'device_id'
-    },
-    ip: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    lastSeen: {
-      type: DataTypes.DATE,
-      field: 'last_seen'
-    }
-  }, {
-    tableName: 'Devices',
-    timestamps: true,
-    paranoid: true,
-    underscored: true // ← Critical!
-  });
-
-  return Device;
-};
+// models/Device.js or in models/index.js
+const Device = sequelize.define('Device', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  deviceId: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  },
+  ip: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  lastSeen: {
+    type: DataTypes.DATE
+  }
+}, {
+  underscored: true,
+  timestamps: true,
+  paranoid: true
+});

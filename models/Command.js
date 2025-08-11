@@ -19,21 +19,23 @@ module.exports = (sequelize, DataTypes) => {
     },
     expiresAt: {
       type: DataTypes.DATE,
-      defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'") // ✅ Fixed
+      defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'")
     }
   }, {
     paranoid: true
   });
 
+  // Define association correctly
   Command.associate = function(models) {
+    // Prevent duplicate association
     if (Command.associations.commandDevice) {
-      console.log('🔁 Association "commandDevice" already exists. Skipping.');
+      console.log('🔁 Command -> Device (as: commandDevice) already defined');
       return;
     }
 
     Command.belongsTo(models.Device, {
-      foreignKey: 'deviceId',
-      targetKey: 'deviceId',
+      foreignKey: 'deviceId',  // in Command table
+      targetKey: 'id',         // in Device table
       as: 'commandDevice'
     });
 
