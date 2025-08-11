@@ -61,6 +61,7 @@ const SensorData = sequelize.define('SensorData', {
   paranoid: true
 });
 
+// ✅ Load Command model
 const Command = require('./Command')(sequelize, Sequelize.DataTypes);
 
 // === Create models object ===
@@ -74,7 +75,7 @@ const models = {
   Command
 };
 
-// === Set up associations ONLY for models that don't define them ===
+// === Define associations only where not handled by .associate() ===
 Device.hasMany(SensorData, {
   foreignKey: 'deviceId',
   sourceKey: 'deviceId',
@@ -98,10 +99,10 @@ Device.hasMany(Command, {
   as: 'commands'
 });
 
-// Attach models to sequelize
+// ✅ Attach models to sequelize
 sequelize.models = models;
 
-// Run all associate() methods
+// ✅ Run associate methods
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
   .forEach(model => model.associate(models));

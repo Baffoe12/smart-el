@@ -25,11 +25,12 @@ module.exports = (sequelize, DataTypes) => {
     paranoid: true
   });
 
+  // ✅ Define association ONLY here
   Command.associate = function(models) {
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
       targetKey: 'deviceId',
-      as: 'commandDevice'
+      as: 'commandDevice'  // ✅ Unique alias
     });
   };
 
