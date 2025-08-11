@@ -74,16 +74,17 @@ const models = {
   Command
 };
 
-// === Set up associations (if any) ===
+// === Set up associations ===
 Device.hasMany(SensorData, {
   foreignKey: 'deviceId',
   sourceKey: 'deviceId',
   as: 'sensorData'
 });
+
 SensorData.belongsTo(Device, {
   foreignKey: 'deviceId',
   targetKey: 'deviceId',
-  as: 'device'
+  as: 'device'  // ✅ Only used once
 });
 
 SensorData.belongsTo(Appliance, {
@@ -91,11 +92,13 @@ SensorData.belongsTo(Appliance, {
   as: 'appliance'
 });
 
+// ✅ Use unique alias
 Command.belongsTo(Device, {
   foreignKey: 'deviceId',
   targetKey: 'deviceId',
-  as: 'device'
+  as: 'commandDevice'  // ✅ Fixed: no conflict
 });
+
 Device.hasMany(Command, {
   foreignKey: 'deviceId',
   sourceKey: 'deviceId',
@@ -105,7 +108,7 @@ Device.hasMany(Command, {
 // Attach models to sequelize
 sequelize.models = models;
 
-// Optional: Define associate method on models if needed
+// Run associate methods
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
   .forEach(model => model.associate(models));

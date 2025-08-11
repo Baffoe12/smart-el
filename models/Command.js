@@ -3,8 +3,7 @@ module.exports = (sequelize, DataTypes) => {
   const Command = sequelize.define('Command', {
     relay: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      validate: { min: 1, max: 4 }
+      allowNull: false
     },
     state: {
       type: DataTypes.BOOLEAN,
@@ -29,7 +28,8 @@ module.exports = (sequelize, DataTypes) => {
   Command.associate = function(models) {
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
-      as: 'device'
+      targetKey: 'deviceId',
+      as: 'commandDevice'  // ✅ Unique alias
     });
   };
 
