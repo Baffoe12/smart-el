@@ -1,9 +1,9 @@
-// models/Device.js or in models/index.js
 const Device = sequelize.define('Device', {
-  id: {
+  id: {  // ✅ Add explicit `id` field
     type: DataTypes.INTEGER,
     primaryKey: true,
-    autoIncrement: true
+    autoIncrement: true,
+    allowNull: false
   },
   deviceId: {
     type: DataTypes.STRING,
