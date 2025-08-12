@@ -6,21 +6,14 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true,
       allowNull: false,
       unique: true,
-      field: 'device_id'  // maps to `device_id` in DB
+      field: 'device_id'
     },
-    ip: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    lastSeen: {
-      type: DataTypes.DATE,
-      field: 'last_seen'
-    }
+    ip: { type: DataTypes.STRING },
+    lastSeen: { type: DataTypes.DATE, field: 'last_seen' }
   }, {
-    tableName: 'Devices',
-    underscored: true,   // enables createdAt → created_at
-    timestamps: true,    // adds createdAt, updatedAt
-    paranoid: true       // enables soft-delete with deletedAt
+    underscored: true,
+    timestamps: true,
+    paranoid: true
   });
 
   Device.associate = function(models) {

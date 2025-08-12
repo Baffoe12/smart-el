@@ -1,48 +1,32 @@
 // models/SensorData.js
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const SensorData = sequelize.define('SensorData', {
-    applianceId: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      field: 'appliance_id',
-      references: {
-        model: 'Appliances',
-        key: 'id'
-      }
-    },
-    deviceId: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      field: 'device_id'
-    },
+    applianceId: { type: DataTypes.INTEGER },
     current: { type: DataTypes.FLOAT },
     voltage: { type: DataTypes.FLOAT },
-    power: { type: DataTypes.INTEGER },
+    power: { type: DataTypes.FLOAT },
     energy: { type: DataTypes.FLOAT },
     cost: { type: DataTypes.FLOAT },
-    timestamp: { type: DataTypes.DATE }
+    timestamp: { type: DataTypes.DATE },
+    deviceId: { type: DataTypes.STRING }
   }, {
-    tableName: 'SensorData',
+    underscored: true,
     timestamps: true,
-    paranoid: false,   // ✅ Disable soft delete
-    underscored: true  // Use snake_case
+    paranoid: true
   });
 
-  // ✅ Add association (optional)
   SensorData.associate = function(models) {
     SensorData.belongsTo(models.Appliance, {
-      foreignKey: 'appliance_id',
+      foreignKey: 'applianceId',
       as: 'appliance'
     });
+
     SensorData.belongsTo(models.Device, {
-      foreignKey: 'device_id',
+      foreignKey: 'deviceId',
+      targetKey: 'deviceId',
       as: 'device'
     });
   };
 
   return SensorData;
 };
-
-//chanage 
