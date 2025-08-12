@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
     energy: { type: DataTypes.FLOAT },
     cost: { type: DataTypes.FLOAT },
     timestamp: { type: DataTypes.DATE },
-    deviceId: { type: DataTypes.STRING }
+    deviceId: { type: DataTypes.STRING }  // ✅ Must be STRING
   }, {
     underscored: true,
     timestamps: true,
@@ -16,19 +16,12 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   SensorData.associate = function(models) {
-    // ✅ Prevent duplicate
-    if (SensorData.associations.device) {
-      console.log('🔁 SensorData -> Device (as: device) already defined. Skipping.');
-      return;
-    }
-
+    SensorData.belongsTo(models.Appliance, { as: 'appliance' });
     SensorData.belongsTo(models.Device, {
       foreignKey: 'deviceId',
       targetKey: 'deviceId',
       as: 'device'
     });
-
-    console.log('✅ Defined SensorData -> Device (as: device)');
   };
 
   return SensorData;

@@ -227,15 +227,13 @@ app.get('/api/commands', async (req, res) => {
     }
 
     console.log(`✅ Found device ID: ${device.id}, IP: ${device.ip}`);
-
-    const command = await Command.findOne({
-      where: {
-        deviceId: device.id,
-        executed: false,
-        expiresAt: { [Op.gt]: new Date() }
-      },
-      order: [['createdAt', 'ASC']]
-    });
+const command = await Command.findOne({
+  where: {
+    deviceId: device.deviceId,  // ✅ Not device.id
+    executed: false,
+    expiresAt: { [Op.gt]: new Date() }
+  }
+});
 
     if (command) {
       console.log(`🎉 Pending command: Relay ${command.relay} → ${command.state}`);
@@ -280,18 +278,18 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       include: [{ model: Device, as: 'device' }]
     });
 
-    const device = latestData?.device;
-    if (!device) {
-      return res.status(400).json({ error: 'No active device found for this appliance' });
-    }
+const device = latestData?.device;
+if (!device) {
+  return res.status(400).json({ error: 'No active device found for this appliance' });
+}
 
-    // ✅ Queue command in DB — ESP32 will poll for it
-    await Command.create({
-      deviceId: device.id,
-      relay: appliance.relay,
-      state: action === 'on',
-      expiresAt: new Date(Date.now() + 300000) // 5 minutes
-    });
+// ✅ Use device.deviceId, not device.id
+await Command.create({
+  deviceId: device.deviceId,  // ✅ String
+  relay: appliance.relay,
+  state: action === 'on',
+  expiresAt: new Date(Date.now() + 300000)
+});
 
     console.log(`✅ Queued ${action.toUpperCase()} for Relay ${appliance.relay} (Device: ${device.deviceId})`);
     res.json({ message: `Command queued to turn ${action}` });
@@ -326,41 +324,49 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       scheduleOff: offDate
     });
 
-    // Queue ON command
+    // ✅ Queue ON command
     setTimeout(async () => {
-      const latestData = await SensorData.findOne({
-        where: { applianceId: id },
-        order: [['timestamp', 'DESC']],
-        include: [{ model: Device, as: 'device' }]
-      });
-      const device = latestData?.device;
-      if (device) {
-        await Command.create({
-          deviceId: device.id,
-          relay: appliance.relay,
-          state: true,
-          expiresAt: new Date(Date.now() + 300000)
+      try {
+        const latestData = await SensorData.findOne({
+          where: { applianceId: id },
+          order: [['timestamp', 'DESC']],
+          include: [{ model: Device, as: 'device' }]
         });
-        console.log(`✅ Scheduled ON for Relay ${appliance.relay}`);
+        const device = latestData?.device;
+        if (device) {
+          await Command.create({
+            deviceId: device.deviceId,  // ✅ Correct
+            relay: appliance.relay,
+            state: true,
+            expiresAt: new Date(Date.now() + 300000)
+          });
+          console.log(`✅ Scheduled ON for Relay ${appliance.relay}`);
+        }
+      } catch (err) {
+        console.error('Failed to schedule ON command:', err);
       }
     }, onDate - Date.now());
 
-    // Queue OFF command
+    // ✅ Queue OFF command
     setTimeout(async () => {
-      const latestData = await SensorData.findOne({
-        where: { applianceId: id },
-        order: [['timestamp', 'DESC']],
-        include: [{ model: Device, as: 'device' }]
-      });
-      const device = latestData?.device;
-      if (device) {
-        await Command.create({
-          deviceId: device.id,
-          relay: appliance.relay,
-          state: false,
-          expiresAt: new Date(Date.now() + 300000)
+      try {
+        const latestData = await SensorData.findOne({
+          where: { applianceId: id },
+          order: [['timestamp', 'DESC']],
+          include: [{ model: Device, as: 'device' }]
         });
-        console.log(`✅ Scheduled OFF for Relay ${appliance.relay}`);
+        const device = latestData?.device;
+        if (device) {
+          await Command.create({
+            deviceId: device.deviceId,  // ✅ Correct
+            relay: appliance.relay,
+            state: false,
+            expiresAt: new Date(Date.now() + 300000)
+          });
+          console.log(`✅ Scheduled OFF for Relay ${appliance.relay}`);
+        }
+      } catch (err) {
+        console.error('Failed to schedule OFF command:', err);
       }
     }, offDate - Date.now());
 
