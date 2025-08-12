@@ -36,6 +36,10 @@ sequelize.models = models;
 // === Run associate methods ===
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
-  .forEach(model => model.associate(models));
+  .forEach(model => {
+    console.log(`🔧 Running associate() for ${model.name}`);
+    model.associate(models);
+  });
 
+console.log('✅ All associations attempted');
 module.exports = models;

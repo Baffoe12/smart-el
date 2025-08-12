@@ -16,18 +16,19 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   SensorData.associate = function(models) {
-    // ✅ Prevent duplicate association
-    if (SensorData.associations.appliance) {
-      console.log('🔁 SensorData -> Appliance (as: appliance) already defined. Skipping.');
+    // ✅ Prevent duplicate
+    if (SensorData.associations.device) {
+      console.log('🔁 SensorData -> Device (as: device) already defined. Skipping.');
       return;
     }
 
-    SensorData.belongsTo(models.Appliance, {
-      foreignKey: 'applianceId',
-      as: 'appliance'
+    SensorData.belongsTo(models.Device, {
+      foreignKey: 'deviceId',
+      targetKey: 'deviceId',
+      as: 'device'
     });
 
-    console.log('✅ Defined SensorData -> Appliance (as: appliance)');
+    console.log('✅ Defined SensorData -> Device (as: device)');
   };
 
   return SensorData;
