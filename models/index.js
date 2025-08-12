@@ -12,7 +12,7 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   logging: false
 });
 
-// Define models
+// === Load all models first ===
 const User = sequelize.define('User', {
   name: { type: Sequelize.STRING },
   email: { type: Sequelize.STRING, unique: true },
@@ -33,26 +33,6 @@ const Appliance = sequelize.define('Appliance', {
   paranoid: true
 });
 
-const Device = sequelize.define('Device', {
-  id: {
-    type: Sequelize.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-    allowNull: false
-  },
-  deviceId: {
-    type: Sequelize.STRING,
-    allowNull: false,
-    unique: true
-  },
-  ip: { type: Sequelize.STRING },
-  lastSeen: { type: Sequelize.DATE }
-}, {
-  underscored: true,
-  timestamps: true,
-  paranoid: true
-}); // ← Comma was missing here!
-
 const SensorData = sequelize.define('SensorData', {
   applianceId: { type: Sequelize.INTEGER },
   current: { type: Sequelize.FLOAT },
@@ -68,7 +48,8 @@ const SensorData = sequelize.define('SensorData', {
   paranoid: true
 });
 
-// ✅ Load Command model
+// ✅ Load from separate files
+const Device = require('./Device')(sequelize, Sequelize.DataTypes);
 const Command = require('./Command')(sequelize, Sequelize.DataTypes);
 
 // === Create models object ===
@@ -82,11 +63,10 @@ const models = {
   Command
 };
 
-// === Define associations only where not handled by .associate() ===
-Device.hasMany(SensorData, {
-  foreignKey: 'deviceId',
-  sourceKey: 'deviceId',
-  as: 'sensorData'
+// === Define associations (only where not in .associate) ===
+SensorData.belongsTo(Appliance, {
+  foreignKey: 'applianceId',
+  as: 'appliance'
 });
 
 SensorData.belongsTo(Device, {
@@ -95,23 +75,18 @@ SensorData.belongsTo(Device, {
   as: 'device'
 });
 
-SensorData.belongsTo(Appliance, {
-  foreignKey: 'applianceId',
-  as: 'appliance'
-});
-
-Device.hasMany(Command, {
-  foreignKey: 'deviceId',
-  sourceKey: 'deviceId',
-  as: 'commands'
-});
-
-// ✅ Attach models to sequelize
+// ✅ Attach to sequelize
 sequelize.models = models;
 
-// ✅ Run associate methods
+// ✅ Run all associate() methods
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
-  .forEach(model => model.associate(models));
+  .forEach(model => {
+    try {
+      model.associate(models);
+    } catch (err) {
+      console.error(`❌ Failed to associate ${model.name}:`, err);
+    }
+  });
 
 module.exports = models;

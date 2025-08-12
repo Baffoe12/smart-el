@@ -22,14 +22,13 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'")
     },
     deviceId: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING,  // ✅ Match Device.deviceId
       allowNull: false
     }
   }, {
     paranoid: true
   });
 
-  // ✅ Only define association if it hasn't been defined
   Command.associate = function(models) {
     if (Command.associations.commandDevice) {
       console.log('🔁 Command -> Device (as: commandDevice) already defined. Skipping.');
@@ -38,7 +37,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
-      targetKey: 'id',
+      targetKey: 'deviceId',  // ✅ Match the actual PK
       as: 'commandDevice'
     });
 
