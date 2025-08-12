@@ -22,21 +22,18 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'")
     },
     deviceId: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      references: {
-        model: 'Devices',
-        key: 'id'
-      }
+      type: DataTypes.STRING,
+      allowNull: false
+      // No `references` — let association handle it
     }
   }, {
     paranoid: true
   });
 
-  // Define association correctly
   Command.associate = function(models) {
     Command.belongsTo(models.Device, {
       foreignKey: 'deviceId',
+      targetKey: 'deviceId',  // ✅ Match the actual PK
       as: 'commandDevice'
     });
   };

@@ -34,9 +34,16 @@ const Appliance = sequelize.define('Appliance', {
 });
 
 const Device = sequelize.define('Device', {
+  id: {
+    type: Sequelize.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+    allowNull: false
+  },
   deviceId: {
     type: Sequelize.STRING,
-    primaryKey: true
+    allowNull: false,
+    unique: true
   },
   ip: { type: Sequelize.STRING },
   lastSeen: { type: Sequelize.DATE }
@@ -44,7 +51,7 @@ const Device = sequelize.define('Device', {
   underscored: true,
   timestamps: true,
   paranoid: true
-});
+}); // ← Comma was missing here!
 
 const SensorData = sequelize.define('SensorData', {
   applianceId: { type: Sequelize.INTEGER },
