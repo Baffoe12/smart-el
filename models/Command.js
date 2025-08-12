@@ -20,6 +20,14 @@ module.exports = (sequelize, DataTypes) => {
     expiresAt: {
       type: DataTypes.DATE,
       defaultValue: sequelize.literal("NOW() + INTERVAL '5 minutes'")
+    },
+    deviceId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'Devices',
+        key: 'id'
+      }
     }
   }, {
     paranoid: true
@@ -27,19 +35,10 @@ module.exports = (sequelize, DataTypes) => {
 
   // Define association correctly
   Command.associate = function(models) {
-    // Prevent duplicate association
-    if (Command.associations.commandDevice) {
-      console.log('🔁 Command -> Device (as: commandDevice) already defined');
-      return;
-    }
-
     Command.belongsTo(models.Device, {
-      foreignKey: 'deviceId',  // in Command table
-      targetKey: 'id',         // in Device table
+      foreignKey: 'deviceId',
       as: 'commandDevice'
     });
-
-    console.log('✅ Defined Command -> Device (as: commandDevice)');
   };
 
   return Command;
