@@ -1,15 +1,25 @@
 // models/index.js
-const { Sequelize } = require('sequelize');
-const sequelize = new Sequelize(process.env.DATABASE_URL, { /* config */ });
+const { Sequelize, DataTypes } = require('sequelize'); // ✅ Added DataTypes
 
-// Load all models
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+  dialect: 'postgres',
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false
+    }
+  },
+  logging: false
+});
+
+// Load models
 const User = require('./User')(sequelize, DataTypes);
 const Appliance = require('./Appliance')(sequelize, DataTypes);
 const SensorData = require('./SensorData')(sequelize, DataTypes);
 const Device = require('./Device')(sequelize, DataTypes);
 const Command = require('./Command')(sequelize, DataTypes);
 
-// Create models object
+// === Create models object ===
 const models = {
   sequelize,
   Sequelize,
@@ -20,10 +30,10 @@ const models = {
   Command
 };
 
-// Attach to sequelize
+// === Attach models to sequelize ===
 sequelize.models = models;
 
-// Run all associate methods
+// === Run associate methods ===
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
   .forEach(model => model.associate(models));

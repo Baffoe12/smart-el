@@ -1,28 +1,17 @@
 // models/User.js
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const User = sequelize.define('User', {
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    email: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
-      validate: {
-        isEmail: true
-      }
-    },
-    passwordHash: {
-      type: DataTypes.STRING,
-      allowNull: false
-    }
+    name: { type: DataTypes.STRING },
+    email: { type: DataTypes.STRING, unique: true },
+    passwordHash: { type: DataTypes.STRING }
   }, {
-    tableName: 'Users',
+    underscored: true,
     timestamps: true
   });
+
+  User.associate = function(models) {
+    // Add associations if needed
+  };
 
   return User;
 };
