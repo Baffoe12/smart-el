@@ -5,9 +5,15 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Op, sequelize } = require('sequelize'); // Note: destructure sequelize
-const { User, Appliance, SensorData, Device, Command } = require('./models');
+const { Op } = require('sequelize');
+const models = require('./models');
+const { sequelize, User, Appliance, SensorData, Device, Command } = models;
 
+// Optional: Validate
+if (!sequelize) {
+  console.error('❌ sequelize is not defined. Check models/index.js export.');
+  process.exit(1);
+}
 // === Validate Environment Variables ===
 if (!process.env.JWT_SECRET) {
   console.error('❌ Missing JWT_SECRET environment variable');

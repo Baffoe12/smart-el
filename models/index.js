@@ -1,6 +1,7 @@
 // models/index.js
-const { Sequelize, DataTypes } = require('sequelize'); // ✅ Added DataTypes
+const { Sequelize, DataTypes } = require('sequelize');
 
+// ✅ 1. Create sequelize instance
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   dialectOptions: {
@@ -12,14 +13,20 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   logging: false
 });
 
-// Load models
-const User = require('./User')(sequelize, DataTypes);
-const Appliance = require('./Appliance')(sequelize, DataTypes);
-const SensorData = require('./SensorData')(sequelize, DataTypes);
-const Device = require('./Device')(sequelize, DataTypes);
-const Command = require('./Command')(sequelize, DataTypes);
+// ✅ 2. Define model loader function
+const loadModel = (modelPath) => {
+  const model = require(modelPath)(sequelize, DataTypes);
+  return model;
+};
 
-// === Create models object ===
+// ✅ 3. Load all models
+const User = loadModel('./User');
+const Appliance = loadModel('./Appliance');
+const SensorData = loadModel('./SensorData');
+const Device = loadModel('./Device');
+const Command = loadModel('./Command');
+
+// ✅ 4. Create models object
 const models = {
   sequelize,
   Sequelize,
@@ -30,10 +37,11 @@ const models = {
   Command
 };
 
-// === Attach models to sequelize ===
-sequelize.models = models;
+// ✅ 5. Attach models to sequelize (safe)
+sequelize.models = sequelize.models || {};
+Object.assign(sequelize.models, models);
 
-// === Run associate methods ===
+// ✅ 6. Run associations
 Object.values(models)
   .filter(model => typeof model.associate === 'function')
   .forEach(model => {
@@ -42,4 +50,6 @@ Object.values(models)
   });
 
 console.log('✅ All associations attempted');
+
+// ✅ 7. EXPORT models (critical!)
 module.exports = models;

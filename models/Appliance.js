@@ -5,29 +5,20 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       primaryKey: true
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    relay: {
-      type: DataTypes.INTEGER,
-      allowNull: false
-    },
-    type: {
-      type: DataTypes.STRING
-    },
-    status: {
-      type: DataTypes.STRING
-    },
+    name: DataTypes.STRING,
+    relay: DataTypes.INTEGER,
+    type: DataTypes.STRING,
+    status: DataTypes.STRING,
     manuallyAdded: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     }
   }, {
-    tableName: 'Appliances'
+    tableName: 'Appliances',
+    paranoid: true
   });
 
-  Appliance.associate = function(models) {
+  Appliance.associate = (models) => {
     Appliance.hasMany(models.SensorData, {
       foreignKey: 'applianceId',
       as: 'sensorData'
