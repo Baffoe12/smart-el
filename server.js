@@ -621,7 +621,7 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-  await sequelize.sync();
+    await sequelize.sync({ alter: true }); // ✅ Adds new columns
     console.log('✅ Tables synchronized');
 
     // Ensure default device
