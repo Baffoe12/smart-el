@@ -18,11 +18,8 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-// Set up associations
-Object.values(sequelize.models)
-  .filter(model => typeof model.associate === 'function')
-  .forEach(model => model.associate(sequelize.models));
-
+// ✅ Replace the deleted block with nothing — or this (optional):
+console.log('✅ Models loaded:', Object.keys({ User, Appliance, SensorData, Device, Command }));
 const app = express();
 const port = process.env.PORT || 3001;
 
