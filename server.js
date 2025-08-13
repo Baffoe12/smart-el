@@ -310,6 +310,37 @@ app.post('/api/appliances/:id/control', async (req, res) => {
   }
 });
 
+// === ACKNOWLEDGE COMMAND (Prevent Re-sending) ===
+app.post('/api/commands/ack', async (req, res) => {
+  const { device_id, relay } = req.query;
+
+  if (!device_id || !relay) {
+    return res.status(400).json({ error: 'Missing device_id or relay' });
+  }
+
+  try {
+    const result = await Command.update(
+      { executed: true },
+      {
+        where: {
+          deviceId: device_id,
+          relay: parseInt(relay),
+          executed: false
+        }
+      }
+    );
+
+    if (result[0] > 0) {
+      console.log(`✅ Command acknowledged: ${device_id}, Relay ${relay}`);
+    }
+
+    res.json({ acknowledged: true, updated: result[0] });
+  } catch (err) {
+    console.error('Ack failed:', err);
+    res.status(500).json({ error: 'Failed to acknowledge command' });
+  }
+});
+
 // === SCHEDULING – Queue Future Commands ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
