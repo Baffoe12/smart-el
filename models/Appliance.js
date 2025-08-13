@@ -1,33 +1,18 @@
-// models/Appliance.js
-const { DataTypes } = require('sequelize');
-
 module.exports = (sequelize) => {
   const Appliance = sequelize.define('Appliance', {
-    name: { type: DataTypes.STRING },
-    type: { type: DataTypes.STRING },
-    relay: { type: DataTypes.INTEGER },
-    status: {
-      type: DataTypes.STRING,
-      defaultValue: 'off'
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true
     },
-    scheduled: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false
-    },
-    scheduleOn: { type: DataTypes.DATE },
-    scheduleOff: { type: DataTypes.DATE },
-    manuallyAdded: { type: DataTypes.BOOLEAN }
-  }, {
-    tableName: 'Appliances',
-    timestamps: true,
-    paranoid: true,
-    underscored: true
+    name: DataTypes.STRING,
+    relay: DataTypes.INTEGER,
+    type: DataTypes.STRING,
+    status: DataTypes.STRING,
+    manuallyAdded: DataTypes.BOOLEAN
   });
 
   Appliance.associate = function(models) {
-    Appliance.hasMany(models.SensorData, {
-      foreignKey: 'applianceId'
-    });
+    Appliance.hasMany(models.SensorData, { foreignKey: 'applianceId' });
   };
 
   return Appliance;
