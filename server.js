@@ -157,15 +157,30 @@ app.post('/api/sensor-data', async (req, res) => {
   }
 });
 
-// === GET LATEST SENSOR DATA (Fixed: Returns Full Latest Readings) ===
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
+    // Step 1: Get latest timestamp per appliance
+    const latestPerAppliance = await SensorData.findAll({
+      attributes: [
+        'applianceId',
+        [sequelize.fn('MAX', sequelize.col('timestamp')), 'maxTimestamp']
+      ],
+      group: ['applianceId'],
+      raw: true
+    });
+
+    if (latestPerAppliance.length === 0) {
+      return res.json([]);
+    }
+
+    // Extract timestamps
+    const maxTimestamps = latestPerAppliance.map(r => r.maxTimestamp);
+
+    // Step 2: Get full rows for those timestamps
     const data = await SensorData.findAll({
-      where: sequelize.literal(`(applianceId, timestamp) IN (
-        SELECT applianceId, MAX(timestamp)
-        FROM SensorData
-        GROUP BY applianceId
-      )`),
+      where: {
+        timestamp: { [Op.in]: maxTimestamps }
+      },
       include: [{ model: Device, as: 'device' }],
       order: [['applianceId', 'ASC']]
     });
@@ -176,7 +191,6 @@ app.get('/api/sensor-data/latest', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch latest data' });
   }
 });
-
 // === GET SENSOR DATA WITH PAGINATION ===
 app.get('/api/sensor-data', async (req, res) => {
   const { limit = 10, offset = 0, deviceId, startDate, endDate } = req.query;
