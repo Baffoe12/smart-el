@@ -340,7 +340,8 @@ app.post('/api/commands/ack', async (req, res) => {
     res.status(500).json({ error: 'Failed to acknowledge command' });
   }
 });
-// === SCHEDULING – Queue Future Commands ===
+// === SCHEDULING – Save Commands to DB with scheduledAt ===
+// In server.js - Scheduling route
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -362,52 +363,40 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     await appliance.update({
       scheduled: true,
       scheduleOn: onDate,
-      scheduleOff: offTime
+      scheduleOff: offDate
     });
 
-    // Schedule ON
-    setTimeout(async () => {
-      try {
-        const latestData = await SensorData.findOne({
-          where: { applianceId: id },
-          order: [['timestamp', 'DESC']],
-          include: [{ model: Device, as: 'device' }]
-        });
-        const device = latestData?.device;
-        if (device) {
-          await Command.create({
-            deviceId: device.deviceId,
-            relay: appliance.relay,
-            state: true,
-            expiresAt: new Date(Date.now() + 300000)
-          });
-        }
-      } catch (err) {
-        console.error('Failed to schedule ON:', err);
-      }
-    }, onDate - Date.now());
+    // Get latest device
+    const latestData = await SensorData.findOne({
+      where: { applianceId: id },
+      order: [['timestamp', 'DESC']],
+      include: [{ model: Device, as: 'device' }]
+    });
 
-    // Schedule OFF
-    setTimeout(async () => {
-      try {
-        const latestData = await SensorData.findOne({
-          where: { applianceId: id },
-          order: [['timestamp', 'DESC']],
-          include: [{ model: Device, as: 'device' }]
-        });
-        const device = latestData?.device;
-        if (device) {
-          await Command.create({
-            deviceId: device.deviceId,
-            relay: appliance.relay,
-            state: false,
-            expiresAt: new Date(Date.now() + 300000)
-          });
-        }
-      } catch (err) {
-        console.error('Failed to schedule OFF:', err);
-      }
-    }, offDate - Date.now());
+    const device = latestData?.device;
+    if (!device) {
+      return res.status(400).json({ error: 'No active device found' });
+    }
+
+    // ✅ Schedule ON command
+    await Command.create({
+      deviceId: device.deviceId,
+      relay: appliance.relay,
+      state: true,
+      executed: false,
+      expiresAt: new Date(onDate.getTime() + 5 * 60 * 1000), // 5 min after
+      scheduledAt: onDate  // When to run
+    });
+
+    // ✅ Schedule OFF command
+    await Command.create({
+      deviceId: device.deviceId,
+      relay: appliance.relay,
+      state: false,
+      executed: false,
+      expiresAt: new Date(offDate.getTime() + 5 * 60 * 1000),
+      scheduledAt: offDate
+    });
 
     res.json({ message: 'Scheduled successfully' });
   } catch (err) {
@@ -415,7 +404,6 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
-
 // === AUTH ROUTES ===
 app.post('/api/signup', async (req, res) => {
   const { name, email, password } = req.body;
@@ -680,5 +668,25 @@ async function startServer() {
     process.exit(1);
   }
 }
+// ✅ Run every 30 seconds
+setInterval(async () => {
+  try {
+    const now = new Date();
+    const pending = await Command.findAll({
+      where: {
+        executed: false,
+        scheduledAt: { [Op.lte]: now }  // Due now or earlier
+      }
+    });
+
+    for (const cmd of pending) {
+      console.log(`🎯 Executing scheduled command: Relay ${cmd.relay} → ${cmd.state ? 'ON' : 'OFF'}`);
+      await cmd.update({ executed: true });
+      // ESP32 will pick it up on next /api/commands poll
+    }
+  } catch (err) {
+    console.error('Scheduled job error:', err);
+  }
+}, 30000); // Every 30 seconds
 
 startServer();
