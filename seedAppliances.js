@@ -1,31 +1,40 @@
-// After sequelize.sync()
-console.log('🔧 Ensuring appliance IDs match relay numbers...');
+const { Appliance } = require('./models');
 
-const expectedAppliances = [
-  { id: 1, name: 'Socket A', relay: 1 },
-  { id: 2, name: 'Socket B', relay: 2 },
-  { id: 3, name: 'Socket C', relay: 3 },
-  { id: 4, name: 'Socket D', relay: 4 }
-];
+async function seedAppliances() {
+  console.log('🔄 Seeding appliances...');
 
-for (const ap of expectedAppliances) {
-  const existing = await Appliance.findOne({
-    where: { relay: ap.relay },
-    paranoid: false
-  });
+  const appliances = [
+    { id: 1, name: 'Socket A', power_rating: 800, location: 'Kitchen', relay: 1 },
+    { id: 2, name: 'Socket B', power_rating: 150, location: 'Kitchen', relay: 2 },
+    { id: 3, name: 'Socket C', power_rating: 120, location: 'Living Room', relay: 3 },
+    { id: 4, name: 'Socket D', power_rating: 500, location: 'Laundry', relay: 4 }
+  ];
 
-  if (!existing) {
-    await Appliance.create(ap);
-    console.log(`✅ Created appliance ${ap.id} for relay ${ap.relay}`);
-  } else if (existing.id !== ap.id) {
-    // Wrong ID — delete and recreate
-    await Appliance.destroy({
-      where: { id: existing.id },
-      force: true
+  for (const appliance of appliances) {
+    const existing = await Appliance.findOne({
+      where: { relay: appliance.relay },
+      paranoid: false
     });
-    await Appliance.create(ap);
-    console.log(`🔄 Reset appliance ID ${existing.id} → ${ap.id}`);
-  } else {
-    console.log(`✅ Appliance ${ap.id} OK`);
+
+    if (!existing) {
+      await Appliance.create(appliance);
+      console.log(`✅ Created ${appliance.name} (Relay ${appliance.relay})`);
+    } else if (existing.name !== appliance.name) {
+      await existing.update({ name: appliance.name });
+      console.log(`🔄 Updated ${existing.name} to ${appliance.name}`);
+    } else {
+      console.log(`✅ ${appliance.name} already exists`);
+    }
   }
+
+  console.log('✅ Appliance seeding complete');
+}
+
+module.exports = seedAppliances;
+
+if (require.main === module) {
+  const { sequelize } = require('./models');
+  sequelize.sync().then(() => {
+    seedAppliances().then(() => process.exit(0));
+  });
 }
