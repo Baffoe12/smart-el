@@ -340,7 +340,6 @@ app.post('/api/commands/ack', async (req, res) => {
     res.status(500).json({ error: 'Failed to acknowledge command' });
   }
 });
-
 // === SCHEDULING – Queue Future Commands ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
@@ -634,7 +633,7 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-  await sequelize.sync({ alter: true });
+  await sequelize.sync();
     console.log('✅ Tables synchronized');
 
     // Ensure default device
