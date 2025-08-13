@@ -615,13 +615,12 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// === START SERVER ===
 async function startServer() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    await sequelize.sync({ alter: true }); // ✅ Adds new columns
+    await sequelize.sync({ alter: true });
     console.log('✅ Tables synchronized');
 
     // Ensure default device
@@ -652,13 +651,32 @@ async function startServer() {
         }
       });
 
-      // Force name update if changed
       const appliance = await Appliance.findOne({ where: { id }, paranoid: false });
       if (appliance && appliance.name !== name) {
         await appliance.update({ name });
         console.log(`🔧 Corrected appliance ${id} name to "${name}"`);
       }
     }
+
+    // ✅ CORRECT: Polling loop starts ONCE, after all setup
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const pending = await Command.findAll({
+          where: {
+            executed: false,
+            scheduledAt: { [Op.lte]: now }
+          }
+        });
+
+        for (const cmd of pending) {
+          console.log(`🎯 Executing scheduled command: Relay ${cmd.relay} → ${cmd.state ? 'ON' : 'OFF'}`);
+          await cmd.update({ executed: true });
+        }
+      } catch (err) {
+        console.error('Scheduled job error:', err);
+      }
+    }, 30000); // Every 30 seconds
 
     app.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
@@ -668,25 +686,5 @@ async function startServer() {
     process.exit(1);
   }
 }
-// ✅ Run every 30 seconds
-setInterval(async () => {
-  try {
-    const now = new Date();
-    const pending = await Command.findAll({
-      where: {
-        executed: false,
-        scheduledAt: { [Op.lte]: now }  // Due now or earlier
-      }
-    });
-
-    for (const cmd of pending) {
-      console.log(`🎯 Executing scheduled command: Relay ${cmd.relay} → ${cmd.state ? 'ON' : 'OFF'}`);
-      await cmd.update({ executed: true });
-      // ESP32 will pick it up on next /api/commands poll
-    }
-  } catch (err) {
-    console.error('Scheduled job error:', err);
-  }
-}, 30000); // Every 30 seconds
 
 startServer();
