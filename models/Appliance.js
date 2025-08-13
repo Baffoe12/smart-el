@@ -9,13 +9,15 @@ module.exports = (sequelize, DataTypes) => {
     relay: DataTypes.INTEGER,
     type: DataTypes.STRING,
     status: DataTypes.STRING,
-    manuallyAdded: {
+    manuallyAdded: {  // 👈 JavaScript property name
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'manually_added'  // 👈 Maps to DB column name
     }
   }, {
     tableName: 'Appliances',
-    paranoid: true
+    paranoid: true,
+    timestamps: true
   });
 
   Appliance.associate = (models) => {
