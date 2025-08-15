@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -9,12 +8,7 @@ const { Op } = require('sequelize');
 const models = require('./models');
 const { sequelize, User, Appliance, SensorData, Device, Command } = models;
 
-// Optional: Validate
-if (!sequelize) {
-  console.error('❌ sequelize is not defined. Check models/index.js export.');
-  process.exit(1);
-}
-// === Validate Environment Variables ===
+// === Validate Environment ===
 if (!process.env.JWT_SECRET) {
   console.error('❌ Missing JWT_SECRET environment variable');
   process.exit(1);
@@ -24,12 +18,19 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-// ✅ Replace the deleted block with nothing — or this (optional):
-console.log('✅ Models loaded:', Object.keys({ User, Appliance, SensorData, Device, Command }));
+// === Initialize Express & Socket.IO ===
 const app = express();
+const server = require('http').createServer(app);
+const io = require('socket.io')(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
 const port = process.env.PORT || 3001;
 
-// Middleware
+// === Middleware ===
 app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
 app.use(bodyParser.text({ type: 'text/plain' }));
@@ -42,233 +43,90 @@ app.use((req, res, next) => {
 
 // === HEALTH CHECK ===
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  res.status(200).json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     message: 'Smart Energy Monitor API is running'
   });
 });
 
-// === SENSOR DATA INGESTION ===
-app.post('/api/sensor-data', async (req, res) => {
-  const { device_id, ip, timestamp, relays } = req.body;
+// === ACTIVE DEVICE CONNECTIONS ===
+const deviceSockets = new Map(); // device_id → socketId
 
-  if (!device_id || !ip) {
-    return res.status(400).json({ error: 'Missing device_id or ip' });
-  }
+io.on('connection', (socket) => {
+  console.log('🔌 Client connected:', socket.id);
 
-  if (!relays || !Array.isArray(relays)) {
-    return res.status(400).json({ error: 'Invalid or missing relays array' });
-  }
-
-  try {
-    const records = [];
-
-    for (const r of relays) {
-      const relayNumber = parseInt(r.relay, 10);
-      const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
-      const date = new Date(validTimestamp);
-
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid timestamp for relay:', r);
-        continue;
-      }
-
-      // Enforce: appliance.id === relay number
-      const expectedId = relayNumber;
-
-      // Clean up any misconfigured appliances
-      await Appliance.destroy({
-        where: { relay: relayNumber, id: { [Op.ne]: expectedId } },
-        force: true
-      });
-
-      // Find or create appliance with correct ID and enforced name
-      let appliance = await Appliance.findOne({ where: { id: expectedId }, paranoid: false });
-
-      const defaultNames = {
-        1: 'Socket A',
-        2: 'Socket B',
-        3: 'Socket C',
-        4: 'Socket D'
-      };
-      const name = defaultNames[relayNumber] || `Relay ${relayNumber}`;
-
-      if (!appliance) {
-        appliance = await Appliance.create({
-          id: expectedId,
-          name,
-          type: 'power',
-          relay: relayNumber,
-          status: 'off',
-          manuallyAdded: false
-        });
-        console.log(`🆕 Created appliance ID=${expectedId} (${name})`);
-      } else if (appliance.deletedAt) {
-        await appliance.restore();
-        console.log(`↩️ Restored appliance ID=${expectedId} (${name})`);
-      }
-
-      // Enforce correct name
-      if (appliance.name !== name) {
-        await appliance.update({ name });
-        console.log(`🔧 Fixed name for Relay ${relayNumber} → ${name}`);
-      }
-
-      records.push({
-        applianceId: appliance.id,
-        current: r.current || 0,
-        voltage: r.voltage || 230,
-        power: r.power || 0,
-        energy: r.energy_kwh || 0,
-        cost: r.cost_ghs || 0,
-        timestamp: date,
-        deviceId: device_id
-      });
+  // Register device ID
+  socket.on('register', async (data) => {
+    const { device_id } = data;
+    if (!device_id) {
+      socket.emit('error', { message: 'device_id required' });
+      return;
     }
 
-    // Validate appliance IDs
-    const validApplianceIds = (await Appliance.unscoped().findAll({
-      where: { id: records.map(r => r.applianceId) },
-      attributes: ['id'],
-      raw: true
-    })).map(a => a.id);
+    deviceSockets.set(device_id, socket.id);
+    console.log(`✅ Device registered: ${device_id} via ${socket.id}`);
 
-    const validRecords = records.filter(r => validApplianceIds.includes(r.applianceId));
-    if (validRecords.length === 0) {
-      return res.status(400).json({ error: 'No valid appliance IDs found' });
-    }
-
-    // Register or update device
+    // Save or update device
     await Device.findOrCreate({
       where: { deviceId: device_id },
-      defaults: { ip, lastSeen: new Date() }
+      defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
     });
     await Device.update(
-      { ip, lastSeen: new Date() },
+      { ip: 'WS_CONNECTED', lastSeen: new Date() },
       { where: { deviceId: device_id } }
     );
 
-    await SensorData.bulkCreate(validRecords);
-    res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
-  } catch (err) {
-    console.error('❌ Sensor data save error:', err);
-    res.status(500).json({ error: 'Failed to save sensor data' });
-  }
-});
+    socket.emit('registered', { device_id, status: 'connected' });
+  });
 
-app.get('/api/sensor-data/latest', async (req, res) => {
-  try {
-    // Step 1: Get latest timestamp per appliance
-    const latestPerAppliance = await SensorData.findAll({
-      attributes: [
-        'applianceId',
-        [sequelize.fn('MAX', sequelize.col('timestamp')), 'maxTimestamp']
-      ],
-      group: ['applianceId'],
-      raw: true
-    });
+  // Receive sensor data via WebSocket (optional)
+  socket.on('sensor-data', async (payload) => {
+    const { device_id, timestamp, relays } = payload;
+    if (!device_id || !relays || !Array.isArray(relays)) return;
 
-    if (latestPerAppliance.length === 0) {
-      return res.json([]);
-    }
+    try {
+      const records = [];
+      const validApplianceIds = (await Appliance.findAll({ attributes: ['id'], raw: true })).map(r => r.id);
 
-    // Extract timestamps
-    const maxTimestamps = latestPerAppliance.map(r => r.maxTimestamp);
+      for (const r of relays) {
+        const applianceId = r.relay;
+        if (!validApplianceIds.includes(applianceId)) continue;
 
-    // Step 2: Get full rows for those timestamps
-    const data = await SensorData.findAll({
-      where: {
-        timestamp: { [Op.in]: maxTimestamps }
-      },
-      include: [{ model: Device, as: 'device' }],
-      order: [['applianceId', 'ASC']]
-    });
-
-    res.json(data);
-  } catch (err) {
-    console.error('Fetch latest data error:', err);
-    res.status(500).json({ error: 'Failed to fetch latest data' });
-  }
-});
-// === GET SENSOR DATA WITH PAGINATION ===
-app.get('/api/sensor-data', async (req, res) => {
-  const { limit = 10, offset = 0, deviceId, startDate, endDate } = req.query;
-  const whereClause = {};
-
-  if (deviceId) whereClause.deviceId = deviceId;
-  if (startDate || endDate) {
-    whereClause.timestamp = {};
-    if (startDate) whereClause.timestamp[Op.gte] = new Date(startDate);
-    if (endDate) whereClause.timestamp[Op.lte] = new Date(endDate);
-  }
-
-  try {
-    const data = await SensorData.findAll({
-      where: whereClause,
-      limit: Math.min(parseInt(limit), 1000),
-      offset: parseInt(offset),
-      order: [['timestamp', 'DESC']],
-      include: [{ model: Device, as: 'device' }]
-    });
-
-    const total = await SensorData.count({ where: whereClause });
-
-    res.json({
-      data,
-      pagination: {
-        total,
-        limit: Math.min(parseInt(limit), 1000),
-        offset: parseInt(offset),
-        hasMore: parseInt(offset) + data.length < total
+        records.push({
+          applianceId,
+          current: r.current || 0,
+          voltage: r.voltage || 230,
+          power: r.power || 0,
+          energy: r.energy_kwh || 0,
+          cost: r.cost_ghs || 0,
+          timestamp: new Date(timestamp * 1000 || Date.now()),
+          deviceId: device_id
+        });
       }
-    });
-  } catch (err) {
-    console.error('Sensor data fetch error:', err);
-    res.status(500).json({ error: 'Failed to fetch sensor data' });
-  }
-});
 
-// === GET PENDING COMMAND FOR DEVICE ===
-app.get('/api/commands', async (req, res) => {
-  const { device_id } = req.query;
-
-  if (!device_id) {
-    return res.status(400).json({ error: 'Missing device_id' });
-  }
-
-  try {
-    const device = await Device.findOne({ where: { deviceId: device_id } });
-    if (!device) {
-      return res.status(404).json({ error: 'Device not found' });
-    }
-
-    const command = await Command.findOne({
-      where: {
-        deviceId: device.deviceId,
-        executed: false,
-        expiresAt: { [Op.gt]: new Date() }
+      if (records.length > 0) {
+        await SensorData.bulkCreate(records);
+        console.log(`📊 Sensor data saved from ${device_id}`);
       }
-    });
-
-    if (command) {
-      return res.json({
-        relay: command.relay,
-        state: command.state
-      });
+    } catch (err) {
+      console.error('WebSocket sensor data error:', err);
     }
+  });
 
-    return res.json({});
-  } catch (err) {
-    console.error('Error in /api/commands:', err);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      detail: err.message 
-    });
-  }
+  socket.on('disconnect', () => {
+    console.log('❌ Client disconnected:', socket.id);
+    // Remove from map
+    for (const [deviceId, sockId] of deviceSockets) {
+      if (sockId === socket.id) {
+        deviceSockets.delete(deviceId);
+        break;
+      }
+    }
+  });
 });
 
-// === RELAY CONTROL – Queue Command Only ===
+// === RELAY CONTROL – Send Command via WebSocket ===
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
   const { action } = req.body;
@@ -281,10 +139,10 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const appliance = await Appliance.findByPk(id);
     if (!appliance) return res.status(404).json({ error: 'Appliance not found' });
 
-    if (![1, 2, 3, 4].includes(appliance.relay)) {
-      return res.status(400).json({ error: `Invalid relay number: ${appliance.relay}` });
-    }
+    const relay = appliance.relay;
+    const state = action === 'on';
 
+    // Get latest device for this appliance
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
@@ -296,52 +154,28 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       return res.status(400).json({ error: 'No active device found for this appliance' });
     }
 
-    await Command.create({
-      deviceId: device.deviceId,
-      relay: appliance.relay,
-      state: action === 'on',
-      expiresAt: new Date(Date.now() + 300000)
-    });
-
-    res.json({ message: `Command queued to turn ${action}` });
-  } catch (err) {
-    console.error('Control failed:', err);
-    res.status(500).json({ error: 'Failed to queue command' });
-  }
-});
-
-// === ACKNOWLEDGE COMMAND (Prevent Re-sending) ===
-app.post('/api/commands/ack', async (req, res) => {
-  const { device_id, relay } = req.query;
-
-  if (!device_id || !relay) {
-    return res.status(400).json({ error: 'Missing device_id or relay' });
-  }
-
-  try {
-    const result = await Command.update(
-      { executed: true },
-      {
-        where: {
-          deviceId: device_id,
-          relay: parseInt(relay),
-          executed: false
-        }
-      }
-    );
-
-    if (result[0] > 0) {
-      console.log(`✅ Command acknowledged: ${device_id}, Relay ${relay}`);
+    // ✅ Send command via WebSocket
+    const socketId = deviceSockets.get(device.deviceId);
+    if (socketId) {
+      io.to(socketId).emit('command', {
+        relay: relay,
+        state: state,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`⚡ Command sent: Relay ${relay} → ${state ? 'ON' : 'OFF'} to ${device.deviceId}`);
+    } else {
+      console.warn(`⚠️ Device ${device.deviceId} is offline. Command not delivered.`);
+      // Optional: queue command in DB for later
     }
 
-    res.json({ acknowledged: true, updated: result[0] });
+    res.json({ message: `Command sent to relay ${relay}`, delivered: !!socketId });
   } catch (err) {
-    console.error('Ack failed:', err);
-    res.status(500).json({ error: 'Failed to acknowledge command' });
+    console.error('Control failed:', err);
+    res.status(500).json({ error: 'Failed to send command' });
   }
 });
-// === SCHEDULING – Save Commands to DB with scheduledAt ===
-// In server.js - Scheduling route
+
+// === SCHEDULING – Send via WebSocket ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -366,7 +200,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       scheduleOff: offDate
     });
 
-    // Get latest device
+    // Get device
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
@@ -378,25 +212,23 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       return res.status(400).json({ error: 'No active device found' });
     }
 
-    // ✅ Schedule ON command
-    await Command.create({
-      deviceId: device.deviceId,
-      relay: appliance.relay,
-      state: true,
-      executed: false,
-      expiresAt: new Date(onDate.getTime() + 5 * 60 * 1000), // 5 min after
-      scheduledAt: onDate  // When to run
-    });
+    // Schedule ON
+    setTimeout(() => {
+      const socketId = deviceSockets.get(device.deviceId);
+      if (socketId) {
+        io.to(socketId).emit('command', { relay: appliance.relay, state: true });
+        console.log(`⏰ Scheduled ON: Relay ${appliance.relay}`);
+      }
+    }, onDate - Date.now());
 
-    // ✅ Schedule OFF command
-    await Command.create({
-      deviceId: device.deviceId,
-      relay: appliance.relay,
-      state: false,
-      executed: false,
-      expiresAt: new Date(offDate.getTime() + 5 * 60 * 1000),
-      scheduledAt: offDate
-    });
+    // Schedule OFF
+    setTimeout(() => {
+      const socketId = deviceSockets.get(device.deviceId);
+      if (socketId) {
+        io.to(socketId).emit('command', { relay: appliance.relay, state: false });
+        console.log(`⏰ Scheduled OFF: Relay ${appliance.relay}`);
+      }
+    }, offDate - Date.now());
 
     res.json({ message: 'Scheduled successfully' });
   } catch (err) {
@@ -404,6 +236,124 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
+
+// === SENSOR DATA INGESTION (HTTP fallback) ===
+app.post('/api/sensor-data', async (req, res) => {
+  const { device_id, ip, timestamp, relays } = req.body;
+
+  if (!device_id || !ip) {
+    return res.status(400).json({ error: 'Missing device_id or ip' });
+  }
+
+  if (!relays || !Array.isArray(relays)) {
+    return res.status(400).json({ error: 'Invalid or missing relays array' });
+  }
+
+  try {
+    const records = [];
+
+    for (const r of relays) {
+      const relayNumber = parseInt(r.relay, 10);
+      const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
+      const date = new Date(validTimestamp);
+
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid timestamp for relay:', r);
+        continue;
+      }
+
+      const expectedId = relayNumber;
+      const defaultNames = { 1: 'Socket A', 2: 'Socket B', 3: 'Socket C', 4: 'Socket D' };
+      const name = defaultNames[relayNumber] || `Relay ${relayNumber}`;
+
+      let appliance = await Appliance.findOne({ where: { id: expectedId }, paranoid: false });
+      if (!appliance) {
+        appliance = await Appliance.create({
+          id: expectedId,
+          name,
+          type: 'power',
+          relay: relayNumber,
+          status: 'off',
+          manuallyAdded: false
+        });
+      } else if (appliance.deletedAt) {
+        await appliance.restore();
+      }
+
+      if (appliance.name !== name) {
+        await appliance.update({ name });
+      }
+
+      records.push({
+        applianceId: appliance.id,
+        current: r.current || 0,
+        voltage: r.voltage || 230,
+        power: r.power || 0,
+        energy: r.energy_kwh || 0,
+        cost: r.cost_ghs || 0,
+        timestamp: date,
+        deviceId: device_id
+      });
+    }
+
+    const validApplianceIds = (await Appliance.unscoped().findAll({
+      where: { id: records.map(r => r.applianceId) },
+      attributes: ['id'],
+      raw: true
+    })).map(a => a.id);
+
+    const validRecords = records.filter(r => validApplianceIds.includes(r.applianceId));
+    if (validRecords.length === 0) {
+      return res.status(400).json({ error: 'No valid appliance IDs found' });
+    }
+
+    await Device.findOrCreate({
+      where: { deviceId: device_id },
+      defaults: { ip, lastSeen: new Date() }
+    });
+    await Device.update(
+      { ip, lastSeen: new Date() },
+      { where: { deviceId: device_id } }
+    );
+
+    await SensorData.bulkCreate(validRecords);
+    res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
+  } catch (err) {
+    console.error('❌ Sensor data save error:', err);
+    res.status(500).json({ error: 'Failed to save sensor data' });
+  }
+});
+
+// === GET LATEST SENSOR DATA ===
+app.get('/api/sensor-data/latest', async (req, res) => {
+  try {
+    const latestPerAppliance = await SensorData.findAll({
+      attributes: [
+        'applianceId',
+        [sequelize.fn('MAX', sequelize.col('timestamp')), 'maxTimestamp']
+      ],
+      group: ['applianceId'],
+      raw: true
+    });
+
+    if (latestPerAppliance.length === 0) {
+      return res.json([]);
+    }
+
+    const maxTimestamps = latestPerAppliance.map(r => r.maxTimestamp);
+    const data = await SensorData.findAll({
+      where: { timestamp: { [Op.in]: maxTimestamps } },
+      include: [{ model: Device, as: 'device' }],
+      order: [['applianceId', 'ASC']]
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error('Fetch latest data error:', err);
+    res.status(500).json({ error: 'Failed to fetch latest data' });
+  }
+});
+
 // === AUTH ROUTES ===
 app.post('/api/signup', async (req, res) => {
   const { name, email, password } = req.body;
@@ -476,29 +426,20 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// === APPLIANCES – Always return Socket A, B, C, D ===
+// === APPLIANCES ===
 app.get('/api/appliances', async (req, res) => {
-  const defaultNames = {
-    1: 'Socket A',
-    2: 'Socket B',
-    3: 'Socket C',
-    4: 'Socket D'
-  };
-
+  const defaultNames = { 1: 'Socket A', 2: 'Socket B', 3: 'Socket C', 4: 'Socket D' };
   try {
     const dbAppliances = await Appliance.findAll({ where: { deletedAt: null } });
     const map = Object.fromEntries(dbAppliances.map(a => [a.relay, a]));
 
-    const result = Object.keys(defaultNames).map(relayStr => {
+    const result = await Promise.all(Object.keys(defaultNames).map(async relayStr => {
       const relay = parseInt(relayStr);
       const existing = map[relay];
       const name = defaultNames[relay];
 
       if (existing) {
-        if (existing.name !== name) {
-          existing.name = name;
-          existing.save(); // Auto-correct
-        }
+        if (existing.name !== name) await existing.update({ name });
         return existing.toJSON();
       } else {
         return {
@@ -512,7 +453,7 @@ app.get('/api/appliances', async (req, res) => {
           updatedAt: new Date()
         };
       }
-    });
+    }));
 
     res.json(result);
   } catch (err) {
@@ -521,7 +462,7 @@ app.get('/api/appliances', async (req, res) => {
   }
 });
 
-// ✅ Block manual creation on relays 1–4
+// Block manual creation on relays 1–4
 app.post('/api/appliances', async (req, res) => {
   const { name, type, relay } = req.body;
   if (!type || !relay) return res.status(400).json({ error: 'Type and relay required' });
@@ -615,6 +556,7 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
+// === Start Server ===
 async function startServer() {
   try {
     await sequelize.authenticate();
@@ -629,57 +571,20 @@ async function startServer() {
       defaults: { ip: '0.0.0.0', lastSeen: new Date() }
     });
 
-    // Ensure default sockets with enforced names
-    const defaultNames = {
-      1: 'Socket A',
-      2: 'Socket B',
-      3: 'Socket C',
-      4: 'Socket D'
-    };
-
+    // Ensure default appliances
+    const defaultNames = { 1: 'Socket A', 2: 'Socket B', 3: 'Socket C', 4: 'Socket D' };
     for (const [idStr, name] of Object.entries(defaultNames)) {
       const id = parseInt(idStr);
       await Appliance.findOrCreate({
         where: { id },
-        defaults: {
-          id,
-          name,
-          relay: id,
-          type: 'power',
-          status: 'off',
-          manuallyAdded: false
-        }
+        defaults: { id, name, relay: id, type: 'power', status: 'off', manuallyAdded: false }
       });
-
-      const appliance = await Appliance.findOne({ where: { id }, paranoid: false });
-      if (appliance && appliance.name !== name) {
-        await appliance.update({ name });
-        console.log(`🔧 Corrected appliance ${id} name to "${name}"`);
-      }
     }
 
-    // ✅ CORRECT: Polling loop starts ONCE, after all setup
-    setInterval(async () => {
-      try {
-        const now = new Date();
-        const pending = await Command.findAll({
-          where: {
-            executed: false,
-            scheduledAt: { [Op.lte]: now }
-          }
-        });
-
-        for (const cmd of pending) {
-          console.log(`🎯 Executing scheduled command: Relay ${cmd.relay} → ${cmd.state ? 'ON' : 'OFF'}`);
-          await cmd.update({ executed: true });
-        }
-      } catch (err) {
-        console.error('Scheduled job error:', err);
-      }
-    }, 30000); // Every 30 seconds
-
-    app.listen(port, '0.0.0.0', () => {
+    // Start server
+    server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
+      console.log(`💡 WebSocket enabled at ws://smart-el-mit1.onrender.com`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
