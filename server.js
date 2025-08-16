@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const models = require('./models');
-const { sequelize, User, Appliance, SensorData, Device, Command } = models;
+const { sequelize, User, Appliance, SensorData, Device } = models;
 
 // === Validate Environment ===
 if (!process.env.JWT_SECRET) {
@@ -18,9 +18,11 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-// === Initialize Express & Socket.IO ===
+// === Initialize Express & HTTP Server ===
 const app = express();
 const server = require('http').createServer(app);
+
+// === Socket.IO for Mobile/Web Dashboard ===
 const io = require('socket.io')(server, {
   cors: {
     origin: "*",
@@ -28,7 +30,13 @@ const io = require('socket.io')(server, {
   }
 });
 
-const port = process.env.PORT || 3001;
+// === Raw WebSocket Server for ESP32 (using 'ws') ===
+const { WebSocketServer } = require('ws');
+const rawWss = new WebSocketServer({ noServer: true });
+
+// === Device Connection Maps ===
+const deviceSockets = new Map();        // device_id → socketId (Socket.IO)
+const esp32Sockets = new Map();         // device_id → ws (Raw WebSocket)
 
 // === Middleware ===
 app.use(cors({ origin: '*' }));
@@ -50,13 +58,10 @@ app.get('/health', (req, res) => {
   });
 });
 
-// === ACTIVE DEVICE CONNECTIONS ===
-const deviceSockets = new Map(); // device_id → socketId
-
+// === SOCKET.IO CONNECTIONS (Mobile/Web App) ===
 io.on('connection', (socket) => {
-  console.log('🔌 Client connected:', socket.id);
+  console.log('📱 Mobile/Web Client connected:', socket.id);
 
-  // Register device ID
   socket.on('register', async (data) => {
     const { device_id } = data;
     if (!device_id) {
@@ -65,7 +70,7 @@ io.on('connection', (socket) => {
     }
 
     deviceSockets.set(device_id, socket.id);
-    console.log(`✅ Device registered: ${device_id} via ${socket.id}`);
+    console.log(`✅ Socket.IO Device registered: ${device_id}`);
 
     // Save or update device
     await Device.findOrCreate({
@@ -80,43 +85,8 @@ io.on('connection', (socket) => {
     socket.emit('registered', { device_id, status: 'connected' });
   });
 
-  // Receive sensor data via WebSocket (optional)
-  socket.on('sensor-data', async (payload) => {
-    const { device_id, timestamp, relays } = payload;
-    if (!device_id || !relays || !Array.isArray(relays)) return;
-
-    try {
-      const records = [];
-      const validApplianceIds = (await Appliance.findAll({ attributes: ['id'], raw: true })).map(r => r.id);
-
-      for (const r of relays) {
-        const applianceId = r.relay;
-        if (!validApplianceIds.includes(applianceId)) continue;
-
-        records.push({
-          applianceId,
-          current: r.current || 0,
-          voltage: r.voltage || 230,
-          power: r.power || 0,
-          energy: r.energy_kwh || 0,
-          cost: r.cost_ghs || 0,
-          timestamp: new Date(timestamp * 1000 || Date.now()),
-          deviceId: device_id
-        });
-      }
-
-      if (records.length > 0) {
-        await SensorData.bulkCreate(records);
-        console.log(`📊 Sensor data saved from ${device_id}`);
-      }
-    } catch (err) {
-      console.error('WebSocket sensor data error:', err);
-    }
-  });
-
   socket.on('disconnect', () => {
-    console.log('❌ Client disconnected:', socket.id);
-    // Remove from map
+    console.log('❌ Socket.IO Client disconnected:', socket.id);
     for (const [deviceId, sockId] of deviceSockets) {
       if (sockId === socket.id) {
         deviceSockets.delete(deviceId);
@@ -126,7 +96,47 @@ io.on('connection', (socket) => {
   });
 });
 
-// === RELAY CONTROL – Send Command via WebSocket ===
+// === RAW WEBSOCKET SERVER (ESP32) ===
+rawWss.on('connection', (ws, req) => {
+  const deviceId = req.url.slice(1); // /SmartBoard_01 → extract
+  if (!deviceId) {
+    ws.close();
+    return;
+  }
+
+  console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId}`);
+  esp32Sockets.set(deviceId, ws);
+
+  ws.send(JSON.stringify({ type: 'welcome', device_id: deviceId }));
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === 'register') {
+        console.log(`✅ ESP32 Registered: ${deviceId}`);
+        ws.send(JSON.stringify({ type: 'registered', device_id: deviceId }));
+      }
+    } catch (err) {
+      console.error('Raw WS parse error:', err);
+    }
+  });
+
+  ws.on('close', () => {
+    esp32Sockets.delete(deviceId);
+    console.log(`❌ ESP32 Disconnected: ${deviceId}`);
+  });
+});
+
+// Upgrade /<device_id> to raw WebSocket
+server.on('upgrade', (request, socket, head) => {
+  if (request.url.startsWith('/')) {
+    rawWss.handleUpgrade(request, socket, head, (ws) => {
+      rawWss.emit('connection', ws, request);
+    });
+  }
+});
+
+// === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
   const { action } = req.body;
@@ -154,28 +164,34 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       return res.status(400).json({ error: 'No active device found for this appliance' });
     }
 
-    // ✅ Send command via WebSocket
-    const socketId = deviceSockets.get(device.deviceId);
-    if (socketId) {
-      io.to(socketId).emit('command', {
+    // ✅ Send command via **raw WebSocket** to ESP32
+    const ws = esp32Sockets.get(device.deviceId);
+    if (ws && ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'command',
         relay: relay,
         state: state,
         timestamp: new Date().toISOString()
-      });
-      console.log(`⚡ Command sent: Relay ${relay} → ${state ? 'ON' : 'OFF'} to ${device.deviceId}`);
+      }));
+      console.log(`⚡ Command sent to ESP32: Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
     } else {
-      console.warn(`⚠️ Device ${device.deviceId} is offline. Command not delivered.`);
-      // Optional: queue command in DB for later
+      console.warn(`⚠️ ESP32 ${device.deviceId} is offline`);
     }
 
-    res.json({ message: `Command sent to relay ${relay}`, delivered: !!socketId });
+    // Also notify mobile via Socket.IO
+    const socketId = deviceSockets.get(device.deviceId);
+    if (socketId) {
+      io.to(socketId).emit('command', { relay, state });
+    }
+
+    res.json({ message: `Command sent to relay ${relay}`, delivered: !!ws });
   } catch (err) {
     console.error('Control failed:', err);
     res.status(500).json({ error: 'Failed to send command' });
   }
 });
 
-// === SCHEDULING – Send via WebSocket ===
+// === SCHEDULING – Send via Raw WebSocket ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -214,18 +230,18 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
 
     // Schedule ON
     setTimeout(() => {
-      const socketId = deviceSockets.get(device.deviceId);
-      if (socketId) {
-        io.to(socketId).emit('command', { relay: appliance.relay, state: true });
+      const ws = esp32Sockets.get(device.deviceId);
+      if (ws && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ relay: appliance.relay, state: true }));
         console.log(`⏰ Scheduled ON: Relay ${appliance.relay}`);
       }
     }, onDate - Date.now());
 
     // Schedule OFF
     setTimeout(() => {
-      const socketId = deviceSockets.get(device.deviceId);
-      if (socketId) {
-        io.to(socketId).emit('command', { relay: appliance.relay, state: false });
+      const ws = esp32Sockets.get(device.deviceId);
+      if (ws && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ relay: appliance.relay, state: false }));
         console.log(`⏰ Scheduled OFF: Relay ${appliance.relay}`);
       }
     }, offDate - Date.now());
@@ -237,7 +253,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
   }
 });
 
-// === SENSOR DATA INGESTION (HTTP fallback) ===
+// === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
   const { device_id, ip, timestamp, relays } = req.body;
 
@@ -581,10 +597,11 @@ async function startServer() {
       });
     }
 
-    // Start server
+    const port = process.env.PORT || 3001;
     server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
-      console.log(`💡 WebSocket enabled at ws://smart-el-mit1.onrender.com`);
+      console.log(`💡 WebSocket: wss://smart-el-mit1.onrender.com/SmartBoard_01 (ESP32)`);
+      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com (Mobile)`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
