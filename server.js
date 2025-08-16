@@ -127,13 +127,22 @@ rawWss.on('connection', (ws, req) => {
   });
 });
 
-// Upgrade /<device_id> to raw WebSocket
+// ✅ === UPGRADE HANDLER (Fixed: Only handle raw WS for device paths) ===
 server.on('upgrade', (request, socket, head) => {
-  if (request.url.startsWith('/')) {
+  const pathname = request.url;
+
+  // Only handle raw WebSocket for device-specific routes like /SmartBoard_01
+  // Skip root (/) and any Socket.IO internal paths
+  if (pathname && pathname !== '/' && !pathname.startsWith('/socket.io')) {
+    console.log('🔧 Raw WebSocket Upgrade:', pathname);
     rawWss.handleUpgrade(request, socket, head, (ws) => {
       rawWss.emit('connection', ws, request);
     });
+    return;
   }
+
+  // Let Socket.IO handle its own connections
+  console.log('🚦 Letting Socket.IO handle upgrade:', pathname);
 });
 
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
@@ -600,8 +609,8 @@ async function startServer() {
     const port = process.env.PORT || 3001;
     server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
-      console.log(`💡 WebSocket: wss://smart-el-mit1.onrender.com/SmartBoard_01 (ESP32)`);
-      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com (Mobile)`);
+      console.log(`💡 Raw WebSocket: wss://smart-el-mit1.onrender.com/SmartBoard_01 (ESP32)`);
+      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com (Mobile App)`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
