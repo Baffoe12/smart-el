@@ -257,6 +257,41 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
+// === GET SENSOR DATA HISTORY (All appliances or filtered) ===
+app.get('/api/sensor-data/history', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
+
+  try {
+    const data = await SensorData.findAll({
+      order: [['timestamp', 'ASC']],
+      limit: limit * 2, // Get more, then group
+      include: [{ model: Device, as: 'device' }]
+    });
+
+    // Group by minute
+    const grouped = {};
+    data.forEach(row => {
+      const minute = new Date(row.timestamp).toISOString().slice(0, 16); // "2025-04-05T10:15"
+      if (!grouped[minute]) {
+        grouped[minute] = {
+          timestamp: row.timestamp.toISOString(),
+          energy: 0,
+          power: 0,
+          current: 0
+        };
+      }
+      grouped[minute].energy += row.energy || 0;
+      grouped[minute].power += row.power || 0;
+      grouped[minute].current += row.current || 0;
+    });
+
+    const result = Object.values(grouped).slice(-limit);
+    res.json(result);
+  } catch (err) {
+    console.error('Fetch history error:', err);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
 // === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
   const { device_id, ip, timestamp, relays } = req.body;
