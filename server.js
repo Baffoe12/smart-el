@@ -200,7 +200,7 @@ app.post('/api/appliances/:id/control', async (req, res) => {
   }
 });
 
-// === SCHEDULING – Send via Raw WebSocket ===
+// === SCHEDULING
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -225,7 +225,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       scheduleOff: offDate
     });
 
-    // Get device
+    // Get latest device
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
@@ -237,23 +237,19 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       return res.status(400).json({ error: 'No active device found' });
     }
 
-    // Schedule ON
-    setTimeout(() => {
-      const ws = esp32Sockets.get(device.deviceId);
-      if (ws && ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ relay: appliance.relay, state: true }));
-        console.log(`⏰ Scheduled ON: Relay ${appliance.relay}`);
-      }
-    }, onDate - Date.now());
-
-    // Schedule OFF
-    setTimeout(() => {
-      const ws = esp32Sockets.get(device.deviceId);
-      if (ws && ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ relay: appliance.relay, state: false }));
-        console.log(`⏰ Scheduled OFF: Relay ${appliance.relay}`);
-      }
-    }, offDate - Date.now());
+    // ✅ Send schedule directly to ESP32
+    const ws = esp32Sockets.get(device.deviceId);
+    if (ws && ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'schedule',
+        relay: appliance.relay,
+        onTime: onDate.getTime(),   // Unix timestamp in ms
+        offTime: offDate.getTime()
+      }));
+      console.log(`✅ Schedule sent to ESP32: Relay ${appliance.relay}`);
+    } else {
+      console.warn(`⚠️ ESP32 ${device.deviceId} is offline`);
+    }
 
     res.json({ message: 'Scheduled successfully' });
   } catch (err) {
@@ -261,7 +257,6 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
-
 // === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
   const { device_id, ip, timestamp, relays } = req.body;
