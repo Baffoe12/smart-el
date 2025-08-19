@@ -374,15 +374,21 @@ await Device.update(
   { where: { deviceId: finalDeviceId } }
 );
     // ✅ Save sensor data
-    await SensorData.bulkCreate(validRecords);
+await SensorData.bulkCreate(validRecords);
 
-    // ✅ Emit real-time update to all connected clients (React Native app)
-    io.emit('sensor-update', validRecords);
-    console.log('✅ Emitting sensor-update:', validRecords); // 🔥 Add this
+// ✅ Emit real-time update to all connected clients (React Native app)
+console.log('✅ Emitting sensor-update:', validRecords);
+io.emit('sensor-update', validRecords);
 
+// ✅ Add this log (fixed)
+console.log('✅ Emitted sensor-update to all clients:', validRecords.map(r => ({
+  applianceId: r.applianceId,
+  power: r.power,
+  timestamp: r.timestamp
+})));
 
-    // ✅ Send response
-    res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
+// ✅ Send response
+res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
   } catch (err) {
     console.error('❌ Sensor data save error:', err);
     res.status(500).json({ error: 'Failed to save sensor data' });
