@@ -8,6 +8,7 @@ const { Op } = require('sequelize');
 const models = require('./models');
 const { sequelize, User, Appliance, SensorData, Device } = models;
 
+let powerThreshold = 140; // Default 140W (you can adjust)
 // === Validate Environment ===
 if (!process.env.JWT_SECRET) {
   console.error('❌ Missing JWT_SECRET environment variable');
@@ -128,42 +129,56 @@ rawWss.on('connection', (ws, req) => {
         );
 
       // ✅ Handle sensor data from ESP32
-      } else if (msg.type === 'sensorData') {
-        const sensor = msg.data;
-        const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
+    // ✅ Handle sensor data from ESP32
+} else if (msg.type === 'sensorData') {
+  const sensor = msg.data;
+  const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
 
-        // ✅ Validate
-        if (!applianceId || typeof power !== 'number') {
-          console.warn('Invalid sensor data:', sensor);
-          return;
-        }
+  // ✅ Validate
+  if (!applianceId || typeof power !== 'number') {
+    console.warn('Invalid sensor data:', sensor);
+    return;
+  }
 
-        // ✅ Save to DB
-        await SensorData.create({
-          applianceId,
-          current: current || 0,
-          voltage: voltage || 230,
-          power,
-          energy: energy || 0,
-          cost: cost || 0,
-          timestamp: new Date(timestamp * 1000), // Unix seconds → Date
-          deviceId: device_id || deviceId // Use from payload or URL
-        });
+  // ✅ Save to DB
+  await SensorData.create({
+    applianceId,
+    current: current || 0,
+    voltage: voltage || 230,
+    power,
+    energy: energy || 0,
+    cost: cost || 0,
+    timestamp: new Date(timestamp * 1000),
+    deviceId: device_id || deviceId
+  });
 
-        console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
+  console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
 
-        // ✅ Emit to frontend
-        io.emit('sensor-update', [{
-          applianceId,
-          power,
-          current,
-          voltage,
-          energy,
-          cost,
-          timestamp: new Date(timestamp * 1000).toISOString()
-        }]);
+  // ✅ AUTO POWER-CUT: Check threshold
+  if (power > powerThreshold) {
+    const ws = esp32Sockets.get(device_id || deviceId);
+    if (ws && ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'command',
+        relay: applianceId,
+        state: false,
+        message: `Auto cut: ${power}W > ${powerThreshold}W`
+      }));
+      console.log(`⚡ Auto power-cut: Appliance ${applianceId} OFF`);
+    }
+  }
 
-      }
+  // ✅ Emit to frontend
+  io.emit('sensor-update', [{
+    applianceId,
+    power,
+    current,
+    voltage,
+    energy,
+    cost,
+    timestamp: new Date(timestamp * 1000).toISOString()
+  }]);
+}
 
     } catch (err) {
       console.error('Raw WS parse error:', err);
@@ -667,10 +682,20 @@ app.get('/api/appliances/:id/history', async (req, res) => {
 });
 
 // Thresholds
+// === THRESHOLDS (GET & POST) ===
 app.get('/api/thresholds', (req, res) => {
-  res.json({ power: 1400 });
+  res.json({ power: powerThreshold });
 });
 
+app.post('/api/thresholds', (req, res) => {
+  const { power } = req.body;
+  if (typeof power !== 'number' || power < 0) {
+    return res.status(400).json({ error: 'Power must be a positive number' });
+  }
+  powerThreshold = power;
+  console.log(`✅ Auto power-cut threshold updated to ${power}W`);
+  res.json({ power: powerThreshold });
+});
 // Export
 app.get('/api/export-report', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=report.csv');
