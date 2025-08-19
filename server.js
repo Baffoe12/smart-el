@@ -312,29 +312,37 @@ app.get('/api/sensor-data/history', async (req, res) => {
 
   try {
     const data = await SensorData.findAll({
-      order: [['timestamp', 'ASC']],
-      limit: limit * 2, // Get more, then group
+      order: [['timestamp', 'DESC']],
+      limit: limit * 10, // Get more data
       include: [{ model: Device, as: 'device' }]
     });
 
-    // Group by minute
+    // Group by minute (use ISO string without seconds)
     const grouped = {};
     data.forEach(row => {
-      const minute = new Date(row.timestamp).toISOString().slice(0, 16); // "2025-04-05T10:15"
+      if (!row.timestamp || isNaN(new Date(row.timestamp).getTime())) return;
+
+      const minute = new Date(row.timestamp).toISOString().slice(0, 16); // "2025-08-19T22:54"
       if (!grouped[minute]) {
         grouped[minute] = {
-          timestamp: row.timestamp.toISOString(),
+          timestamp: new Date(minute + ":00.000Z").toISOString(),
           energy: 0,
           power: 0,
-          current: 0
+          current: 0,
+          count: 0
         };
       }
       grouped[minute].energy += row.energy || 0;
       grouped[minute].power += row.power || 0;
       grouped[minute].current += row.current || 0;
+      grouped[minute].count++;
     });
 
-    const result = Object.values(grouped).slice(-limit);
+    // Sort and limit
+    const result = Object.values(grouped)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(-limit);
+
     res.json(result);
   } catch (err) {
     console.error('Fetch history error:', err);
