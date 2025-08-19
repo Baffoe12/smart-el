@@ -109,13 +109,62 @@ rawWss.on('connection', (ws, req) => {
 
   ws.send(JSON.stringify({ type: 'welcome', device_id: deviceId }));
 
-  ws.on('message', (data) => {
+  ws.on('message', async (data) => {  // ← Add 'async'
     try {
       const msg = JSON.parse(data);
+
       if (msg.type === 'register') {
         console.log(`✅ ESP32 Registered: ${deviceId}`);
         ws.send(JSON.stringify({ type: 'registered', device_id: deviceId }));
+
+        // ✅ Update device in DB
+        await Device.findOrCreate({
+          where: { deviceId: deviceId },
+          defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
+        });
+        await Device.update(
+          { ip: 'WS_CONNECTED', lastSeen: new Date() },
+          { where: { deviceId: deviceId } }
+        );
+
+      // ✅ Handle sensor data from ESP32
+      } else if (msg.type === 'sensorData') {
+        const sensor = msg.data;
+        const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
+
+        // ✅ Validate
+        if (!applianceId || typeof power !== 'number') {
+          console.warn('Invalid sensor data:', sensor);
+          return;
+        }
+
+        // ✅ Save to DB
+        await SensorData.create({
+          applianceId,
+          current: current || 0,
+          voltage: voltage || 230,
+          power,
+          energy: energy || 0,
+          cost: cost || 0,
+          timestamp: new Date(timestamp * 1000), // Unix seconds → Date
+          deviceId: device_id || deviceId // Use from payload or URL
+        });
+
+        console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
+
+        // ✅ Emit to frontend
+        io.emit('sensor-update', [{
+          applianceId,
+          power,
+          current,
+          voltage,
+          energy,
+          cost,
+          timestamp: new Date(timestamp * 1000).toISOString()
+        }]);
+
       }
+
     } catch (err) {
       console.error('Raw WS parse error:', err);
     }
