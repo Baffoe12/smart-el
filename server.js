@@ -371,14 +371,19 @@ app.post('/api/sensor-data', async (req, res) => {
       { where: { deviceId: device_id } }
     );
 
+    // ✅ Save sensor data
     await SensorData.bulkCreate(validRecords);
+
+    // ✅ Emit real-time update to all connected clients (React Native app)
+    io.emit('sensor-update', validRecords);
+
+    // ✅ Send response
     res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
   } catch (err) {
     console.error('❌ Sensor data save error:', err);
     res.status(500).json({ error: 'Failed to save sensor data' });
   }
 });
-
 // === GET LATEST SENSOR DATA ===
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
