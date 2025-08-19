@@ -51,6 +51,7 @@ app.use((req, res, next) => {
 
 // === HEALTH CHECK ===
 app.get('/health', (req, res) => {
+  console.log('✅ Health check received');
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
@@ -65,6 +66,7 @@ io.on('connection', (socket) => {
   socket.on('register', async (data) => {
     const { device_id } = data;
     if (!device_id) {
+      console.warn('⚠️ Register failed: device_id missing');
       socket.emit('error', { message: 'device_id required' });
       return;
     }
@@ -73,16 +75,19 @@ io.on('connection', (socket) => {
     console.log(`✅ Socket.IO Device registered: ${device_id}`);
 
     // Save or update device
-    await Device.findOrCreate({
-      where: { deviceId: device_id },
-      defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
-    });
-    await Device.update(
-      { ip: 'WS_CONNECTED', lastSeen: new Date() },
-      { where: { deviceId: device_id } }
-    );
-
-    socket.emit('registered', { device_id, status: 'connected' });
+    try {
+      await Device.findOrCreate({
+        where: { deviceId: device_id },
+        defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
+      });
+      await Device.update(
+        { ip: 'WS_CONNECTED', lastSeen: new Date() },
+        { where: { deviceId: device_id } }
+      );
+      socket.emit('registered', { device_id, status: 'connected' });
+    } catch (err) {
+      console.error('❌ DB error during register:', err);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -90,6 +95,7 @@ io.on('connection', (socket) => {
     for (const [deviceId, sockId] of deviceSockets) {
       if (sockId === socket.id) {
         deviceSockets.delete(deviceId);
+        console.log(`🗑️ Removed Socket.IO mapping for ${deviceId}`);
         break;
       }
     }
@@ -100,6 +106,7 @@ io.on('connection', (socket) => {
 rawWss.on('connection', (ws, req) => {
   const deviceId = req.url.slice(1); // /SmartBoard_01 → extract
   if (!deviceId) {
+    console.warn('❌ Invalid deviceId in URL:', req.url);
     ws.close();
     return;
   }
@@ -112,12 +119,14 @@ rawWss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data);
+      console.log(`📨 ESP32 Message:`, msg);
+
       if (msg.type === 'register') {
         console.log(`✅ ESP32 Registered: ${deviceId}`);
         ws.send(JSON.stringify({ type: 'registered', device_id: deviceId }));
       }
     } catch (err) {
-      console.error('Raw WS parse error:', err);
+      console.error('❌ Raw WS parse error:', err);
     }
   });
 
@@ -127,7 +136,7 @@ rawWss.on('connection', (ws, req) => {
   });
 });
 
-// ✅ === UPGRADE HANDLER (Fixed: Only handle raw WS for device paths) ===
+// ✅ === UPGRADE HANDLER (Only handle raw WS for device paths) ===
 server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
 
@@ -176,31 +185,35 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     // ✅ Send command via **raw WebSocket** to ESP32
     const ws = esp32Sockets.get(device.deviceId);
     if (ws && ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({
+      const command = {
         type: 'command',
         relay: relay,
         state: state,
         timestamp: new Date().toISOString()
-      }));
+      };
+      ws.send(JSON.stringify(command));
       console.log(`⚡ Command sent to ESP32: Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
     } else {
-      console.warn(`⚠️ ESP32 ${device.deviceId} is offline`);
+      console.warn(`⚠️ ESP32 ${device.deviceId} is offline or not connected`);
     }
 
     // Also notify mobile via Socket.IO
     const socketId = deviceSockets.get(device.deviceId);
     if (socketId) {
       io.to(socketId).emit('command', { relay, state });
+      console.log(`📲 Command broadcast to mobile: Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
+    } else {
+      console.warn(`⚠️ No Socket.IO client found for ${device.deviceId}`);
     }
 
     res.json({ message: `Command sent to relay ${relay}`, delivered: !!ws });
   } catch (err) {
-    console.error('Control failed:', err);
+    console.error('❌ Control failed:', err);
     res.status(500).json({ error: 'Failed to send command' });
   }
 });
 
-// === SCHEDULING
+// === SCHEDULING ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -243,7 +256,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       ws.send(JSON.stringify({
         type: 'schedule',
         relay: appliance.relay,
-        onTime: onDate.getTime(),   // Unix timestamp in ms
+        onTime: onDate.getTime(),
         offTime: offDate.getTime()
       }));
       console.log(`✅ Schedule sent to ESP32: Relay ${appliance.relay}`);
@@ -253,25 +266,26 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
 
     res.json({ message: 'Scheduled successfully' });
   } catch (err) {
-    console.error('Schedule failed:', err);
+    console.error('❌ Schedule failed:', err);
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
-// === GET SENSOR DATA HISTORY (All appliances or filtered) ===
+
+// === GET SENSOR DATA HISTORY ===
 app.get('/api/sensor-data/history', async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
 
   try {
     const data = await SensorData.findAll({
       order: [['timestamp', 'ASC']],
-      limit: limit * 2, // Get more, then group
+      limit: limit * 2,
       include: [{ model: Device, as: 'device' }]
     });
 
     // Group by minute
     const grouped = {};
     data.forEach(row => {
-      const minute = new Date(row.timestamp).toISOString().slice(0, 16); // "2025-04-05T10:15"
+      const minute = new Date(row.timestamp).toISOString().slice(0, 16);
       if (!grouped[minute]) {
         grouped[minute] = {
           timestamp: row.timestamp.toISOString(),
@@ -286,21 +300,25 @@ app.get('/api/sensor-data/history', async (req, res) => {
     });
 
     const result = Object.values(grouped).slice(-limit);
+    console.log(`📈 Sent history with ${result.length} records`);
     res.json(result);
   } catch (err) {
-    console.error('Fetch history error:', err);
+    console.error('❌ Fetch history error:', err);
     res.status(500).json({ error: 'Failed to fetch history' });
   }
 });
+
 // === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
   const { device_id, ip, timestamp, relays } = req.body;
 
   if (!device_id || !ip) {
+    console.warn('❌ Missing device_id or ip:', { device_id, ip });
     return res.status(400).json({ error: 'Missing device_id or ip' });
   }
 
   if (!relays || !Array.isArray(relays)) {
+    console.warn('❌ Invalid or missing relays array:', relays);
     return res.status(400).json({ error: 'Invalid or missing relays array' });
   }
 
@@ -313,7 +331,7 @@ app.post('/api/sensor-data', async (req, res) => {
       const date = new Date(validTimestamp);
 
       if (isNaN(date.getTime())) {
-        console.warn('Invalid timestamp for relay:', r);
+        console.warn('❌ Invalid timestamp for relay:', r);
         continue;
       }
 
@@ -331,12 +349,15 @@ app.post('/api/sensor-data', async (req, res) => {
           status: 'off',
           manuallyAdded: false
         });
+        console.log(`🆕 Created appliance: ${name} (ID: ${expectedId})`);
       } else if (appliance.deletedAt) {
         await appliance.restore();
+        console.log(`🔄 Restored appliance: ${name}`);
       }
 
       if (appliance.name !== name) {
         await appliance.update({ name });
+        console.log(`📝 Updated appliance name: ${appliance.name} → ${name}`);
       }
 
       records.push({
@@ -359,6 +380,7 @@ app.post('/api/sensor-data', async (req, res) => {
 
     const validRecords = records.filter(r => validApplianceIds.includes(r.applianceId));
     if (validRecords.length === 0) {
+      console.warn('❌ No valid appliance IDs found in records');
       return res.status(400).json({ error: 'No valid appliance IDs found' });
     }
 
@@ -373,8 +395,10 @@ app.post('/api/sensor-data', async (req, res) => {
 
     // ✅ Save sensor data
     await SensorData.bulkCreate(validRecords);
+    console.log(`💾 Saved ${validRecords.length} sensor records`);
 
     // ✅ Emit real-time update to all connected clients (React Native app)
+    console.log('✅ Emitting sensor-update:', validRecords);
     io.emit('sensor-update', validRecords);
 
     // ✅ Send response
@@ -384,6 +408,7 @@ app.post('/api/sensor-data', async (req, res) => {
     res.status(500).json({ error: 'Failed to save sensor data' });
   }
 });
+
 // === GET LATEST SENSOR DATA ===
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
@@ -397,6 +422,7 @@ app.get('/api/sensor-data/latest', async (req, res) => {
     });
 
     if (latestPerAppliance.length === 0) {
+      console.log('⚠️ No latest data found');
       return res.json([]);
     }
 
@@ -407,9 +433,10 @@ app.get('/api/sensor-data/latest', async (req, res) => {
       order: [['applianceId', 'ASC']]
     });
 
+    console.log(`📤 Sending latest ${data.length} records`);
     res.json(data);
   } catch (err) {
-    console.error('Fetch latest data error:', err);
+    console.error('❌ Fetch latest data error:', err);
     res.status(500).json({ error: 'Failed to fetch latest data' });
   }
 });
@@ -445,7 +472,7 @@ app.post('/api/signup', async (req, res) => {
 
     res.status(201).json({ token, user: { id: user.id, name, email } });
   } catch (err) {
-    console.error('Signup failed:', err);
+    console.error('❌ Signup failed:', err);
     res.status(500).json({ error: 'Signup failed' });
   }
 });
@@ -471,7 +498,7 @@ app.post('/api/login', async (req, res) => {
 
     res.json({ token, user: { id: user.id, name: user.name, email } });
   } catch (err) {
-    console.error('Login failed:', err);
+    console.error('❌ Login failed:', err);
     res.status(500).json({ error: 'Login failed' });
   }
 });
@@ -517,7 +544,7 @@ app.get('/api/appliances', async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error('Fetch appliances error:', err);
+    console.error('❌ Fetch appliances error:', err);
     res.status(500).json({ error: 'Fetch failed' });
   }
 });
@@ -645,7 +672,7 @@ async function startServer() {
     server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
       console.log(`💡 Raw WebSocket: wss://smart-el-mit1.onrender.com/SmartBoard_01 (ESP32)`);
-      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com (Mobile App)`);
+      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com   (Mobile App)`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
