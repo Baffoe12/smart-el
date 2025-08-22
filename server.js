@@ -144,7 +144,7 @@ rawWss.on('connection', (ws, req) => {
   await SensorData.create({
     applianceId,
     current: current || 0,
-    voltage: voltage || 230,
+    voltage: voltage || 228,
     power,
     energy: energy || 0,
     cost: cost || 0,
@@ -417,7 +417,7 @@ app.post('/api/sensor-data', async (req, res) => {
       records.push({
   applianceId: appliance.id,
   current: r.current || 0,
-  voltage: r.voltage || 230,
+  voltage: r.voltage || 228,
   power: r.power || 0,
   energy: r.energy_kwh || 0,
   cost: r.cost_ghs || 0,

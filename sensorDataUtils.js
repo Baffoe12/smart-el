@@ -49,7 +49,7 @@ async function processSensorDataJSON(data) {
   const sensorRecords = relays.map(r => ({
     applianceId: r.id,
     current: r.current,
-    voltage: 230,
+    voltage: 228,
     power: r.power,
     energy: r.energy_kwh,
     cost: r.cost_ghs,
@@ -86,7 +86,7 @@ async function processSensorDataText(rawData) {
         energy: relayData.energy_kwh,
         cost: relayData.cost_ghs,
         relayState: relayData.state,
-        voltage: 230
+        voltage: 228
       });
     }
   }

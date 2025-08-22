@@ -1,9 +1,9 @@
 {
   "development": {
-    "username": "smartdb_dqtb_user",
-    "password": "gWt9U3FnkdJxHpK8NZvtDeGOeiVN6LRJ",
-    "database": "smartdb_dqtb",
-    "host": "dpg-d27dqc0gjchc7383ke30-a.oregon-postgres.render.com",
+    "username": "smart_board_db_user",
+    "password": "b5snzDzkCBkc7gjRdFCxVktl4CxBkpN9",
+    "database": "smart_board_db",
+    "host": "dpg-d2kfmnbipnbc73f2lb20-a.oregon-postgres.render.com",
     "dialect": "postgres",
     "dialectOptions": {
       "ssl": {
@@ -13,10 +13,10 @@
     }
   },
   "test": {
-    "username": "smartdb_dqtb_user",
-    "password": "gWt9U3FnkdJxHpK8NZvtDeGOeiVN6LRJ",
-    "database": "smartdb_dqtb",
-    "host": "dpg-d27dqc0gjchc7383ke30-a.oregon-postgres.render.com",
+    "username": "smart_board_db_user",
+    "password": "b5snzDzkCBkc7gjRdFCxVktl4CxBkpN9",
+    "database": "smart_board_db",
+    "host": "dpg-d2kfmnbipnbc73f2lb20-a.oregon-postgres.render.com",
     "dialect": "postgres",
     "dialectOptions": {
       "ssl": {
@@ -26,10 +26,10 @@
     }
   },
   "production": {
-    "username": "smartdb_dqtb_user",
-    "password": "gWt9U3FnkdJxHpK8NZvtDeGOeiVN6LRJ",
-    "database": "smartdb_dqtb",
-    "host": "dpg-d27dqc0gjchc7383ke30-a.oregon-postgres.render.com",
+    "username": "smart_board_db_user",
+    "password": "b5snzDzkCBkc7gjRdFCxVktl4CxBkpN9",
+    "database": "smart_board_db",
+    "host": "dpg-d2kfmnbipnbc73f2lb20-a.oregon-postgres.render.com",
     "dialect": "postgres",
     "dialectOptions": {
       "ssl": {
