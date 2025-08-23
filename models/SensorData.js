@@ -10,9 +10,10 @@ module.exports = (sequelize, DataTypes) => {
     timestamp: { type: DataTypes.DATE },
     deviceId: { type: DataTypes.STRING }
   }, {
-    underscored: true,
-    timestamps: true,
-    paranoid: true
+    underscored: true,      // uses created_at, updated_at
+    timestamps: true,       // enables createdAt, updatedAt
+    paranoid: true,         // enables soft-delete with deletedAt
+    tableName: 'sensor_data' // ✅ Critical: set explicit table name
   });
 
   SensorData.associate = function(models) {
