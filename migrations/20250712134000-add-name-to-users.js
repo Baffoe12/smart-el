@@ -2,7 +2,7 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.addColumn('Users', 'name', {
+   await queryInterface.addColumn('users', 'name', {
       type: Sequelize.STRING,
       allowNull: false,
       defaultValue: 'User' // Default value for existing records
