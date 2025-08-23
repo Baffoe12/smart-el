@@ -736,8 +736,8 @@ async function startServer() {
     const port = process.env.PORT || 10000;
     server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${port}`);
-      console.log(`💡 Raw WebSocket: wss://smart-el-mit1.onrender.com/SmartBoard_01 (ESP32)`);
-      console.log(`📱 Socket.IO: https://smart-el-mit1.onrender.com (Mobile App)`);
+      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/SmartBoard_01 (ESP32)`);
+      console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com (Mobile App)`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
