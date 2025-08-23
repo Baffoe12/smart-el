@@ -1,26 +1,38 @@
 // migrations/20250712136000-add-device-id-to-devices.js
+
 'use strict';
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    const tableInfo = await queryInterface.describeTable('devices');
+    // Add device_id if not exists
+    await queryInterface.addColumn('devices', 'device_id', {
+      type: Sequelize.STRING,
+      allowNull: true
+    }).catch(() => {}); // ignore if already exists
 
-    if (!tableInfo.deviceId) {
-      await queryInterface.addColumn('devices', 'deviceId', {
-        type: Sequelize.STRING,
-        allowNull: false,
-        unique: true // So it can be referenced
-      });
+    // Backfill with UUID-based ID
+    await queryInterface.sequelize.query(`
+      UPDATE "devices"
+      SET "device_id" = 'DEV-' || REPLACE(GEN_RANDOM_UUID()::TEXT, '-', '')
+      WHERE "device_id" IS NULL OR "device_id" = ''
+    `);
 
-      // Optional: Create index
-      await queryInterface.addIndex('devices', ['deviceId']);
-    }
+    // Now make it required
+    await queryInterface.changeColumn('devices', 'device_id', {
+      type: Sequelize.STRING,
+      allowNull: false
+    });
+
+    // Ensure uniqueness
+    await queryInterface.addConstraint('devices', {
+      fields: ['device_id'],
+      type: 'unique',
+      name: 'devices_device_id_unique'
+    });
   },
 
   down: async (queryInterface, Sequelize) => {
-    const tableInfo = await queryInterface.describeTable('devices');
-    if (tableInfo.deviceId) {
-      await queryInterface.removeColumn('devices', 'deviceId');
-    }
+    await queryInterface.removeConstraint('devices', 'devices_device_id_unique');
+    await queryInterface.removeColumn('devices', 'device_id');
   }
 };
