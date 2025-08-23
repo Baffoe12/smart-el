@@ -1,4 +1,3 @@
-// models/Device.js
 module.exports = (sequelize, DataTypes) => {
   const Device = sequelize.define('Device', {
     deviceId: {
@@ -6,41 +5,45 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true,
       allowNull: false,
       unique: true,
-      field: 'device_id'
+      field: 'device_id' // maps to DB column `device_id`
     },
-    ip: { type: DataTypes.STRING },
-    lastSeen: { type: DataTypes.DATE, field: 'last_seen' }
+    ip: {
+      type: DataTypes.STRING,
+      field: 'ip'
+    },
+    lastSeen: {
+      type: DataTypes.DATE,
+      field: 'last_seen'
+    }
   }, {
-    underscored: true,
-    timestamps: true,
-    paranoid: true
+    tableName: 'devices',
+    underscored: true,    // automatically sets field names to snake_case
+    timestamps: true,     // createdAt, updatedAt
+    paranoid: true,       // soft delete with deletedAt
+    freezeTableName: true
   });
 
   Device.associate = function(models) {
-    // ✅ Prevent duplicate: sensorData
-    if (Device.associations.sensorData) {
-      console.log('🔁 Device -> SensorData (as: sensorData) already defined. Skipping.');
-      return;
+    if (!Device.associations.sensorData) {
+      Device.hasMany(models.SensorData, {
+        foreignKey: 'deviceId',
+        sourceKey: 'deviceId',
+        as: 'sensorData'
+      });
+      console.log('✅ Defined Device -> SensorData');
+    } else {
+      console.log('🔁 Device -> SensorData already defined');
     }
 
-    Device.hasMany(models.SensorData, {
-      foreignKey: 'deviceId',
-      sourceKey: 'deviceId',
-      as: 'sensorData'
-    });
-
-    console.log('✅ Defined Device -> SensorData (as: sensorData)');
-
-    // ✅ Prevent duplicate: commands
     if (!Device.associations.commands) {
       Device.hasMany(models.Command, {
         foreignKey: 'deviceId',
         sourceKey: 'deviceId',
         as: 'commands'
       });
-      console.log('✅ Defined Device -> Command (as: commands)');
+      console.log('✅ Defined Device -> Command');
     } else {
-      console.log('🔁 Device -> Command (as: commands) already defined. Skipping.');
+      console.log('🔁 Device -> Command already defined');
     }
   };
 
