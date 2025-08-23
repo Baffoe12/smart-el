@@ -1,38 +1,37 @@
+'use strict';
+
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('Devices', {
-      deviceId: {
+    await queryInterface.createTable('devices', {
+      device_id: {
         type: Sequelize.STRING,
         primaryKey: true,
-        allowNull: false,
-        field: 'device_id'
+        allowNull: false
       },
       ip: {
         type: Sequelize.STRING,
         allowNull: false
       },
-      lastSeen: {
+      last_seen: {
         type: Sequelize.DATE,
-        field: 'last_seen'
+        allowNull: true
       },
-      createdAt: {
+      created_at: {
         type: Sequelize.DATE,
-        allowNull: false,
-        field: 'created_at'
+        allowNull: false
       },
-      updatedAt: {
+      updated_at: {
         type: Sequelize.DATE,
-        allowNull: false,
-        field: 'updated_at'
+        allowNull: false
       },
-      deletedAt: {
+      deleted_at: {
         type: Sequelize.DATE,
-        field: 'deleted_at',
         allowNull: true
       }
     });
   },
+
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('Devices');
+    await queryInterface.dropTable('devices');
   }
 };
