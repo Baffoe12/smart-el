@@ -322,41 +322,36 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
   }
 });
 // === GET SENSOR DATA HISTORY (All appliances or filtered) ===
+// === GET SENSOR DATA HISTORY (Per Appliance, Full Records) ===
 app.get('/api/sensor-data/history', async (req, res) => {
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(req.query.limit) || 1000;
 
   try {
     const data = await SensorData.findAll({
       order: [['timestamp', 'DESC']],
-      limit: limit * 10, // Get more data
-      include: [{ model: Device, as: 'device' }]
+      limit: limit,
+      include: [{ model: Device, as: 'device' }],
+      attributes: [
+        'applianceId',
+        'current',
+        'voltage',
+        'power',
+        'energy',
+        'cost',
+        'timestamp'
+      ]
     });
 
-    // Group by minute (use ISO string without seconds)
-    const grouped = {};
-    data.forEach(row => {
-      if (!row.timestamp || isNaN(new Date(row.timestamp).getTime())) return;
-
-      const minute = new Date(row.timestamp).toISOString().slice(0, 16); // "2025-08-19T22:54"
-      if (!grouped[minute]) {
-        grouped[minute] = {
-          timestamp: new Date(minute + ":00.000Z").toISOString(),
-          energy: 0,
-          power: 0,
-          current: 0,
-          count: 0
-        };
-      }
-      grouped[minute].energy += row.energy || 0;
-      grouped[minute].power += row.power || 0;
-      grouped[minute].current += row.current || 0;
-      grouped[minute].count++;
-    });
-
-    // Sort and limit
-    const result = Object.values(grouped)
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .slice(-limit);
+    // Convert to plain objects and format timestamp to Unix
+    const result = data.map(row => ({
+      applianceId: row.applianceId,
+      current: row.current,
+      voltage: row.voltage,
+      power: row.power,
+      energy: row.energy,
+      cost: row.cost,
+      timestamp: Math.floor(new Date(row.timestamp).getTime() / 1000) // Unix timestamp
+    }));
 
     res.json(result);
   } catch (err) {
