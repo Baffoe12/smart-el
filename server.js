@@ -9,6 +9,7 @@ const models = require('./models');
 const { sequelize, User, Appliance, SensorData, Device } = models;
 
 let powerThreshold = 140; // Default 140W (you can adjust)
+
 // === Validate Environment ===
 if (!process.env.JWT_SECRET) {
   console.error('❌ Missing JWT_SECRET environment variable');
@@ -59,6 +60,29 @@ app.get('/health', (req, res) => {
   });
 });
 
+// === DEBUG ENDPOINT ===
+app.get('/api/debug/ws-status', (req, res) => {
+  const esp32Devices = Array.from(esp32Sockets.keys());
+  const socketIODevices = Array.from(deviceSockets.keys());
+  
+  res.json({
+    esp32Connections: {
+      count: esp32Sockets.size,
+      devices: esp32Devices,
+      connections: Array.from(esp32Sockets.entries()).map(([deviceId, ws]) => ({
+        deviceId,
+        readyState: ws.readyState,
+        bufferedAmount: ws.bufferedAmount
+      }))
+    },
+    socketIOConnections: {
+      count: deviceSockets.size,
+      devices: socketIODevices
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // === SOCKET.IO CONNECTIONS (Mobile/Web App) ===
 io.on('connection', (socket) => {
   console.log('📱 Mobile/Web Client connected:', socket.id);
@@ -99,8 +123,9 @@ io.on('connection', (socket) => {
 
 // === RAW WEBSOCKET SERVER (ESP32) ===
 rawWss.on('connection', (ws, req) => {
-  const deviceId = req.url.slice(1); // /SmartBoard_01 → extract
+  const deviceId = req.url.slice(1); // /SmartBoard_01 → SmartBoard_01
   if (!deviceId) {
+    console.log('❌ WebSocket connection rejected: no device ID');
     ws.close();
     return;
   }
@@ -108,15 +133,26 @@ rawWss.on('connection', (ws, req) => {
   console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId}`);
   esp32Sockets.set(deviceId, ws);
 
+  // Send welcome message
   ws.send(JSON.stringify({ type: 'welcome', device_id: deviceId }));
 
-  ws.on('message', async (data) => {  // ← Add 'async'
+  ws.on('message', async (data) => {
     try {
       const msg = JSON.parse(data);
+      console.log(`📥 WS Message from ${deviceId}:`, msg.type);
+      
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+        return;
+      }
 
       if (msg.type === 'register') {
         console.log(`✅ ESP32 Registered: ${deviceId}`);
-        ws.send(JSON.stringify({ type: 'registered', device_id: deviceId }));
+        ws.send(JSON.stringify({ 
+          type: 'registered', 
+          device_id: deviceId,
+          timestamp: Date.now()
+        }));
 
         // ✅ Update device in DB
         await Device.findOrCreate({
@@ -128,86 +164,116 @@ rawWss.on('connection', (ws, req) => {
           { where: { deviceId: deviceId } }
         );
 
-      // ✅ Handle sensor data from ESP32
-    // ✅ Handle sensor data from ESP32
-} else if (msg.type === 'sensorData') {
-  const sensor = msg.data;
-  const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
+      } else if (msg.type === 'sensorData') {
+        const sensor = msg.data;
+        const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
 
-  // ✅ Validate
-  if (!applianceId || typeof power !== 'number') {
-    console.warn('Invalid sensor data:', sensor);
-    return;
-  }
+        // ✅ Validate
+        if (!applianceId || typeof power !== 'number') {
+          console.warn('Invalid sensor data:', sensor);
+          return;
+        }
 
-  // ✅ Save to DB
-  await SensorData.create({
-    applianceId,
-    current: current || 0,
-    voltage: voltage || 228,
-    power,
-    energy: energy || 0,
-    cost: cost || 0,
-    timestamp: new Date(timestamp * 1000),
-    deviceId: device_id || deviceId
-  });
+        // ✅ Save to DB
+        await SensorData.create({
+          applianceId,
+          current: current || 0,
+          voltage: voltage || 228,
+          power,
+          energy: energy || 0,
+          cost: cost || 0,
+          timestamp: new Date(timestamp * 1000),
+          deviceId: device_id || deviceId
+        });
 
-  console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
+        console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
 
-  // ✅ AUTO POWER-CUT: Check threshold
-  if (power > powerThreshold) {
-    const ws = esp32Sockets.get(device_id || deviceId);
-    if (ws && ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'command',
-        relay: applianceId,
-        state: false,
-        message: `Auto cut: ${power}W > ${powerThreshold}W`
-      }));
-      console.log(`⚡ Auto power-cut: Appliance ${applianceId} OFF`);
-    }
-  }
+        // ✅ AUTO POWER-CUT: Check threshold
+        if (power > powerThreshold) {
+          const wsClient = esp32Sockets.get(device_id || deviceId);
+          if (wsClient && wsClient.readyState === wsClient.OPEN) {
+            wsClient.send(JSON.stringify({
+              type: 'command',
+              relay: applianceId,
+              state: false,
+              message: `Auto cut: ${power}W > ${powerThreshold}W`
+            }));
+            console.log(`⚡ Auto power-cut: Appliance ${applianceId} OFF`);
+          }
+        }
 
-  // ✅ Emit to frontend
-  io.emit('sensor-update', [{
-    applianceId,
-    power,
-    current,
-    voltage,
-    energy,
-    cost,
-    timestamp: new Date(timestamp * 1000).toISOString()
-  }]);
-}
+        // ✅ Emit to frontend
+        io.emit('sensor-update', [{
+          applianceId,
+          power,
+          current,
+          voltage,
+          energy,
+          cost,
+          timestamp: new Date(timestamp * 1000).toISOString()
+        }]);
+      }
 
     } catch (err) {
-      console.error('Raw WS parse error:', err);
+      console.error('Raw WS parse error:', err, 'Data:', data.toString());
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+      } catch (sendErr) {
+        console.error('Failed to send error message:', sendErr);
+      }
     }
   });
 
-  ws.on('close', () => {
+  ws.on('error', (err) => {
+    console.error(`❌ WebSocket error for ${deviceId}:`, err);
+  });
+
+  ws.on('close', (code, reason) => {
+    console.log(`❌ ESP32 Disconnected: ${deviceId}, Code: ${code}, Reason: ${reason ? reason.toString() : 'No reason'}`);
     esp32Sockets.delete(deviceId);
-    console.log(`❌ ESP32 Disconnected: ${deviceId}`);
+  });
+
+  ws.on('pong', () => {
+    console.log(`🏓 Pong received from ${deviceId}`);
   });
 });
 
-// ✅ === UPGRADE HANDLER (Fixed: Only handle raw WS for device paths) ===
+// === UPGRADE HANDLER (Fixed) ===
 server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
+  console.log('Upgrade request for:', pathname);
 
-  // Only handle raw WebSocket for device-specific routes like /SmartBoard_01
-  // Skip root (/) and any Socket.IO internal paths
-  if (pathname && pathname !== '/' && !pathname.startsWith('/socket.io')) {
-    console.log('🔧 Raw WebSocket Upgrade:', pathname);
+  // Handle your specific device path
+  if (pathname === '/SmartBoard_01') {
+    console.log('🔧 Raw WebSocket Upgrade for SmartBoard_01');
     rawWss.handleUpgrade(request, socket, head, (ws) => {
       rawWss.emit('connection', ws, request);
     });
-    return;
+  } else if (pathname && pathname.startsWith('/socket.io')) {
+    // Let Socket.IO handle its connections
+    console.log('🚦 Letting Socket.IO handle upgrade:', pathname);
+  } else {
+    // Reject unknown paths
+    console.log('❌ Rejecting unknown upgrade path:', pathname);
+    socket.destroy();
   }
-
-  // Let Socket.IO handle its own connections
-  console.log('🚦 Letting Socket.IO handle upgrade:', pathname);
 });
+
+// === Keep-Alive Mechanism ===
+setInterval(() => {
+  esp32Sockets.forEach((ws, deviceId) => {
+    if (ws.readyState === ws.OPEN) {
+      try {
+        ws.ping();
+      } catch (err) {
+        console.error(`❌ Failed to ping ${deviceId}:`, err);
+      }
+    } else {
+      console.log(`🧹 Cleaning up dead connection: ${deviceId}`);
+      esp32Sockets.delete(deviceId);
+    }
+  });
+}, 30000); // Every 30 seconds
 
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 app.post('/api/appliances/:id/control', async (req, res) => {
@@ -264,7 +330,7 @@ app.post('/api/appliances/:id/control', async (req, res) => {
   }
 });
 
-// === SCHEDULING
+// === SCHEDULING ===
 app.post('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const { onTime, offTime } = req.body;
@@ -321,8 +387,8 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     res.status(500).json({ error: 'Schedule failed' });
   }
 });
-// === GET SENSOR DATA HISTORY (All appliances or filtered) ===
-// === GET SENSOR DATA HISTORY (Per Appliance, Full Records) ===
+
+// === GET SENSOR DATA HISTORY ===
 app.get('/api/sensor-data/history', async (req, res) => {
   const limit = parseInt(req.query.limit) || 1000;
 
@@ -359,6 +425,7 @@ app.get('/api/sensor-data/history', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch history' });
   }
 });
+
 // === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
   // ✅ Handle both deviceId and device_id
@@ -410,15 +477,15 @@ app.post('/api/sensor-data', async (req, res) => {
       }
 
       records.push({
-  applianceId: appliance.id,
-  current: r.current || 0,
-  voltage: r.voltage || 228,
-  power: r.power || 0,
-  energy: r.energy_kwh || 0,
-  cost: r.cost_ghs || 0,
-  timestamp: date,
-  device_id: finalDeviceId  // ✅ Use finalDeviceId and underscore
-});
+        applianceId: appliance.id,
+        current: r.current || 0,
+        voltage: r.voltage || 228,
+        power: r.power || 0,
+        energy: r.energy_kwh || 0,
+        cost: r.cost_ghs || 0,
+        timestamp: date,
+        device_id: finalDeviceId  // ✅ Use finalDeviceId and underscore
+      });
     }
 
     const validApplianceIds = (await Appliance.unscoped().findAll({
@@ -432,35 +499,37 @@ app.post('/api/sensor-data', async (req, res) => {
       return res.status(400).json({ error: 'No valid appliance IDs found' });
     }
 
- await Device.findOrCreate({
-  where: { deviceId: finalDeviceId }, // ✅ Use finalDeviceId
-  defaults: { ip: finalIp, lastSeen: new Date() }
-});
-await Device.update(
-  { ip: finalIp, lastSeen: new Date() },
-  { where: { deviceId: finalDeviceId } }
-);
+    await Device.findOrCreate({
+      where: { deviceId: finalDeviceId }, // ✅ Use finalDeviceId
+      defaults: { ip: finalIp, lastSeen: new Date() }
+    });
+    await Device.update(
+      { ip: finalIp, lastSeen: new Date() },
+      { where: { deviceId: finalDeviceId } }
+    );
+
     // ✅ Save sensor data
-await SensorData.bulkCreate(validRecords);
+    await SensorData.bulkCreate(validRecords);
 
-// ✅ Emit real-time update to all connected clients (React Native app)
-console.log('✅ Emitting sensor-update:', validRecords);
-io.emit('sensor-update', validRecords);
+    // ✅ Emit real-time update to all connected clients (React Native app)
+    console.log('✅ Emitting sensor-update:', validRecords);
+    io.emit('sensor-update', validRecords);
 
-// ✅ Add this log (fixed)
-console.log('✅ Emitted sensor-update to all clients:', validRecords.map(r => ({
-  applianceId: r.applianceId,
-  power: r.power,
-  timestamp: r.timestamp
-})));
+    // ✅ Add this log (fixed)
+    console.log('✅ Emitted sensor-update to all clients:', validRecords.map(r => ({
+      applianceId: r.applianceId,
+      power: r.power,
+      timestamp: r.timestamp
+    })));
 
-// ✅ Send response
-res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
+    // ✅ Send response
+    res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
   } catch (err) {
     console.error('❌ Sensor data save error:', err);
     res.status(500).json({ error: 'Failed to save sensor data' });
   }
 });
+
 // === GET LATEST SENSOR DATA ===
 app.get('/api/sensor-data/latest', async (req, res) => {
   try {
@@ -677,7 +746,6 @@ app.get('/api/appliances/:id/history', async (req, res) => {
 });
 
 // Thresholds
-// === THRESHOLDS (GET & POST) ===
 app.get('/api/thresholds', (req, res) => {
   res.json({ power: powerThreshold });
 });
@@ -691,6 +759,7 @@ app.post('/api/thresholds', (req, res) => {
   console.log(`✅ Auto power-cut threshold updated to ${power}W`);
   res.json({ power: powerThreshold });
 });
+
 // Export
 app.get('/api/export-report', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=report.csv');
@@ -729,10 +798,12 @@ async function startServer() {
     }
 
     const port = process.env.PORT || 10000;
-    server.listen(port, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${port}`);
-      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/SmartBoard_01 (ESP32)`);
-      console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com (Mobile App)`);
+    const host = process.env.HOST || '0.0.0.0';
+    
+    server.listen(port, host, () => {
+      console.log(`🚀 Server running on ${host}:${port}`);
+      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/SmartBoard_01`);
+      console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
