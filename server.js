@@ -123,14 +123,14 @@ io.on('connection', (socket) => {
 
 // === RAW WEBSOCKET SERVER (ESP32) ===
 rawWss.on('connection', (ws, req) => {
-  const deviceId = req.url.slice(1); // /SmartBoard_01 → SmartBoard_01
-  if (!deviceId) {
-    console.log('❌ WebSocket connection rejected: no device ID');
-    ws.close();
-    return;
+  // Extract device ID from URL or use default
+  let deviceId = 'SmartBoard_01'; // Default device ID
+  if (req.url && req.url !== '/' && req.url !== '/SmartBoard_01') {
+    // If URL is like /SomeDeviceName, extract the device name
+    deviceId = req.url.startsWith('/') ? req.url.slice(1) : req.url;
   }
-
-  console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId}`);
+  
+  console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId} (URL: ${req.url})`);
   esp32Sockets.set(deviceId, ws);
 
   // Send welcome message
@@ -147,26 +147,28 @@ rawWss.on('connection', (ws, req) => {
       }
 
       if (msg.type === 'register') {
-        console.log(`✅ ESP32 Registered: ${deviceId}`);
+        const registeredDeviceId = msg.device_id || deviceId;
+        console.log(`✅ ESP32 Registered: ${registeredDeviceId}`);
         ws.send(JSON.stringify({ 
           type: 'registered', 
-          device_id: deviceId,
+          device_id: registeredDeviceId,
           timestamp: Date.now()
         }));
 
         // ✅ Update device in DB
         await Device.findOrCreate({
-          where: { deviceId: deviceId },
+          where: { deviceId: registeredDeviceId },
           defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
         });
         await Device.update(
           { ip: 'WS_CONNECTED', lastSeen: new Date() },
-          { where: { deviceId: deviceId } }
+          { where: { deviceId: registeredDeviceId } }
         );
 
       } else if (msg.type === 'sensorData') {
         const sensor = msg.data;
         const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
+        const finalDeviceId = device_id || deviceId;
 
         // ✅ Validate
         if (!applianceId || typeof power !== 'number') {
@@ -183,14 +185,14 @@ rawWss.on('connection', (ws, req) => {
           energy: energy || 0,
           cost: cost || 0,
           timestamp: new Date(timestamp * 1000),
-          deviceId: device_id || deviceId
+          deviceId: finalDeviceId
         });
 
         console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
 
         // ✅ AUTO POWER-CUT: Check threshold
         if (power > powerThreshold) {
-          const wsClient = esp32Sockets.get(device_id || deviceId);
+          const wsClient = esp32Sockets.get(finalDeviceId);
           if (wsClient && wsClient.readyState === wsClient.OPEN) {
             wsClient.send(JSON.stringify({
               type: 'command',
@@ -238,14 +240,14 @@ rawWss.on('connection', (ws, req) => {
   });
 });
 
-// === UPGRADE HANDLER (Fixed) ===
+// === UPGRADE HANDLER (FIXED) ===
 server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
-  console.log('Upgrade request for:', pathname);
+  console.log('🔄 Upgrade request for:', pathname);
 
-  // Handle your specific device path
-  if (pathname === '/SmartBoard_01') {
-    console.log('🔧 Raw WebSocket Upgrade for SmartBoard_01');
+  // ✅ Accept WebSocket connections to both root (/) and specific paths
+  if (pathname === '/' || pathname === '/SmartBoard_01' || pathname.startsWith('/')) {
+    console.log('🔧 Raw WebSocket Upgrade accepted for:', pathname);
     rawWss.handleUpgrade(request, socket, head, (ws) => {
       rawWss.emit('connection', ws, request);
     });
@@ -802,7 +804,7 @@ async function startServer() {
     
     server.listen(port, host, () => {
       console.log(`🚀 Server running on ${host}:${port}`);
-      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/SmartBoard_01`);
+      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/`);
       console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com`);
     });
   } catch (err) {
