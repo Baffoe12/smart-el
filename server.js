@@ -278,6 +278,7 @@ setInterval(() => {
 }, 30000); // Every 30 seconds
 
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
+// === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
   const { action } = req.body;
@@ -293,20 +294,11 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const relay = appliance.relay;
     const state = action === 'on';
 
-    // Get latest device for this appliance
-    const latestData = await SensorData.findOne({
-      where: { applianceId: id },
-      order: [['timestamp', 'DESC']],
-      include: [{ model: Device, as: 'device' }]
-    });
-
-    const device = latestData?.device;
-    if (!device) {
-      return res.status(400).json({ error: 'No active device found for this appliance' });
-    }
+    // ✅ Always send to SmartBoard_01 (for now)
+    const targetDeviceId = 'SmartBoard_01';
 
     // ✅ Send command via **raw WebSocket** to ESP32
-    const ws = esp32Sockets.get(device.deviceId);
+    const ws = esp32Sockets.get(targetDeviceId);
     if (ws && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
         type: 'command',
@@ -314,18 +306,19 @@ app.post('/api/appliances/:id/control', async (req, res) => {
         state: state,
         timestamp: new Date().toISOString()
       }));
-      console.log(`⚡ Command sent to ESP32: Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
+      console.log(`⚡ Command sent to ESP32 (${targetDeviceId}): Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
     } else {
-      console.warn(`⚠️ ESP32 ${device.deviceId} is offline`);
+      console.warn(`⚠️ ESP32 ${targetDeviceId} is offline or not connected`);
+      return res.status(500).json({ error: 'Device offline' });
     }
 
     // Also notify mobile via Socket.IO
-    const socketId = deviceSockets.get(device.deviceId);
+    const socketId = deviceSockets.get(targetDeviceId);
     if (socketId) {
       io.to(socketId).emit('command', { relay, state });
     }
 
-    res.json({ message: `Command sent to relay ${relay}`, delivered: !!ws });
+    res.json({ message: `Command sent to relay ${relay}`, delivered: true });
   } catch (err) {
     console.error('Control failed:', err);
     res.status(500).json({ error: 'Failed to send command' });
