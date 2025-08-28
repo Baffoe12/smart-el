@@ -245,19 +245,19 @@ server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
   console.log('🔄 Upgrade request for:', pathname);
 
-  if (pathname === '/esp32ws') {  // ← Use this instead
-    console.log('🔧 Raw WebSocket Upgrade accepted');
+  // ✅ Accept both root and /SmartBoard_01
+  if (pathname === '/' || pathname === '/SmartBoard_01') {
+    console.log('🔧 Raw WebSocket Upgrade accepted for:', pathname);
     rawWss.handleUpgrade(request, socket, head, (ws) => {
       rawWss.emit('connection', ws, request);
     });
   } else if (pathname.startsWith('/socket.io')) {
-    console.log('🚦 Letting Socket.IO handle:', pathname);
+    console.log('🚦 Letting Socket.IO handle upgrade:', pathname);
   } else {
-    console.log('❌ Rejecting upgrade:', pathname);
+    console.log('❌ Rejecting unknown upgrade path:', pathname);
     socket.destroy();
   }
 });
-
 // === Keep-Alive Mechanism ===
 // === Keep-Alive Mechanism ===
 setInterval(() => {
