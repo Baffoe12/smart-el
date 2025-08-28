@@ -245,37 +245,37 @@ server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
   console.log('🔄 Upgrade request for:', pathname);
 
-  // ✅ Accept WebSocket connections to both root (/) and specific paths
-  if (pathname === '/' || pathname === '/SmartBoard_01' || pathname.startsWith('/')) {
-    console.log('🔧 Raw WebSocket Upgrade accepted for:', pathname);
+  if (pathname === '/esp32ws') {  // ← Use this instead
+    console.log('🔧 Raw WebSocket Upgrade accepted');
     rawWss.handleUpgrade(request, socket, head, (ws) => {
       rawWss.emit('connection', ws, request);
     });
-  } else if (pathname && pathname.startsWith('/socket.io')) {
-    // Let Socket.IO handle its connections
-    console.log('🚦 Letting Socket.IO handle upgrade:', pathname);
+  } else if (pathname.startsWith('/socket.io')) {
+    console.log('🚦 Letting Socket.IO handle:', pathname);
   } else {
-    // Reject unknown paths
-    console.log('❌ Rejecting unknown upgrade path:', pathname);
+    console.log('❌ Rejecting upgrade:', pathname);
     socket.destroy();
   }
 });
 
 // === Keep-Alive Mechanism ===
+// === Keep-Alive Mechanism ===
 setInterval(() => {
   esp32Sockets.forEach((ws, deviceId) => {
     if (ws.readyState === ws.OPEN) {
       try {
-        ws.ping();
+        ws.ping();  // This sends a WebSocket ping frame
+        console.log(`🏓 Ping sent to ${deviceId}`);
       } catch (err) {
-        console.error(`❌ Failed to ping ${deviceId}:`, err);
+        console.error(`❌ Ping failed to ${deviceId}:`, err);
+        esp32Sockets.delete(deviceId);
       }
     } else {
       console.log(`🧹 Cleaning up dead connection: ${deviceId}`);
       esp32Sockets.delete(deviceId);
     }
   });
-}, 30000); // Every 30 seconds
+}, 30000); // Every 30 seconds (Render timeout ~55s)
 
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
