@@ -122,14 +122,14 @@ io.on('connection', (socket) => {
 });
 
 // === RAW WEBSOCKET SERVER (ESP32) ===
+// === RAW WEBSOCKET SERVER (ESP32) ===
 rawWss.on('connection', (ws, req) => {
   // Extract device ID from URL or use default
   let deviceId = 'SmartBoard_01'; // Default device ID
   if (req.url && req.url !== '/' && req.url !== '/SmartBoard_01') {
-    // If URL is like /SomeDeviceName, extract the device name
     deviceId = req.url.startsWith('/') ? req.url.slice(1) : req.url;
   }
-  
+
   console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId} (URL: ${req.url})`);
   esp32Sockets.set(deviceId, ws);
 
@@ -155,7 +155,6 @@ rawWss.on('connection', (ws, req) => {
           timestamp: Date.now()
         }));
 
-        // ✅ Update device in DB
         await Device.findOrCreate({
           where: { deviceId: registeredDeviceId },
           defaults: { ip: 'WS_CONNECTED', lastSeen: new Date() }
@@ -164,19 +163,17 @@ rawWss.on('connection', (ws, req) => {
           { ip: 'WS_CONNECTED', lastSeen: new Date() },
           { where: { deviceId: registeredDeviceId } }
         );
-
-      } else if (msg.type === 'sensorData') {
+      } 
+      else if (msg.type === 'sensorData') {
         const sensor = msg.data;
         const { applianceId, current, voltage, power, energy, cost, timestamp, device_id } = sensor;
         const finalDeviceId = device_id || deviceId;
 
-        // ✅ Validate
         if (!applianceId || typeof power !== 'number') {
           console.warn('Invalid sensor data:', sensor);
           return;
         }
 
-        // ✅ Save to DB
         await SensorData.create({
           applianceId,
           current: current || 0,
@@ -190,10 +187,9 @@ rawWss.on('connection', (ws, req) => {
 
         console.log(`✅ Saved sensor data via WS: Appliance ${applianceId}, Power: ${power}W`);
 
-        // ✅ AUTO POWER-CUT: Check threshold
         if (power > powerThreshold) {
           const wsClient = esp32Sockets.get(finalDeviceId);
-          if (wsClient && wsClient.readyState === wsClient.OPEN) {
+          if (wsClient && wsClient.readyState === WebSocket.OPEN) {
             wsClient.send(JSON.stringify({
               type: 'command',
               relay: applianceId,
@@ -204,7 +200,6 @@ rawWss.on('connection', (ws, req) => {
           }
         }
 
-        // ✅ Emit to frontend
         io.emit('sensor-update', [{
           applianceId,
           power,
@@ -215,7 +210,6 @@ rawWss.on('connection', (ws, req) => {
           timestamp: new Date(timestamp * 1000).toISOString()
         }]);
       }
-
     } catch (err) {
       console.error('Raw WS parse error:', err, 'Data:', data.toString());
       try {
@@ -245,7 +239,6 @@ server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
   console.log('🔄 Upgrade request for:', pathname);
 
-  // ✅ Accept both root and /SmartBoard_01
   if (pathname === '/' || pathname === '/SmartBoard_01') {
     console.log('🔧 Raw WebSocket Upgrade accepted for:', pathname);
     rawWss.handleUpgrade(request, socket, head, (ws) => {
