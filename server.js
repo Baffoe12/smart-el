@@ -123,33 +123,29 @@ io.on('connection', (socket) => {
 
 // === RAW WEBSOCKET SERVER (ESP32) ===
 rawWss.on('connection', (ws, req) => {
-  // Extract device ID from URL or use default
-  let deviceId = 'SmartBoard_01'; // Default device ID
-  if (req.url && req.url !== '/' && req.url !== '/SmartBoard_01') {
-    deviceId = req.url.startsWith('/') ? req.url.slice(1) : req.url;
+  // ✅ Normalize the path to ensure consistent deviceId
+  const pathname = req.url ? req.url.trim() : '';
+
+  // ✅ Normalize: ignore case, remove leading/trailing slashes
+  const normalizedPath = pathname.toLowerCase().replace(/^\/+|\/+$/g, '');
+
+  // ✅ Enforce canonical ID
+  let deviceId = 'SmartBoard_01';
+  if (normalizedPath !== '' && normalizedPath !== 'smartboard_01') {
+    console.warn(`⚠ Unexpected path: ${pathname}, treating as SmartBoard_01`);
   }
 
-  console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId} (URL: ${req.url})`);
+  console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId} (URL: ${pathname})`);
   esp32Sockets.set(deviceId, ws);
 
-  // ✅ Set up heartbeat
-  ws.isAlive = true;
-
-  // ✅ Listen for pong replies
-  ws.on('pong', () => {
-    ws.isAlive = true;
-    console.log(`🏓 Pong received from ${deviceId}`);
-  });
-
-  // Send welcome message
-  ws.send(JSON.stringify({ type: 'welcome', device_id: deviceId }));
-
+  // ✅ Critical: Update esp32Sockets on every message to ensure freshness
   ws.on('message', async (data) => {
+    // ✅ Always update the latest WebSocket for this device
+    esp32Sockets.set(deviceId, ws);
+
     try {
       const msg = JSON.parse(data);
       console.log(`📥 WS Message from ${deviceId}:`, msg.type);
-      
-
 
       if (msg.type === 'register') {
         const registeredDeviceId = msg.device_id || deviceId;
@@ -223,6 +219,13 @@ rawWss.on('connection', (ws, req) => {
         console.error('Failed to send error message:', sendErr);
       }
     }
+  });
+
+  // ✅ Heartbeat
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+    console.log(`🏓 Pong received from ${deviceId}`);
   });
 
   ws.on('error', (err) => {
@@ -748,6 +751,7 @@ app.get('/api/export-report', (req, res) => {
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
+
 
 // === Start Server ===
 async function startServer() {
