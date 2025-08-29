@@ -357,19 +357,11 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       scheduleOff: offDate
     });
 
-    const latestData = await SensorData.findOne({
-      where: { applianceId: id },
-      order: [['timestamp', 'DESC']],
-      include: [{ model: Device, as: 'device' }]
-    });
+    // ✅ Always send to SmartBoard_01
+    const targetDeviceId = 'SmartBoard_01';
+    const ws = esp32Sockets.get(targetDeviceId);
 
-    const device = latestData?.device;
-    if (!device) {
-      return res.status(400).json({ error: 'No active device found' });
-    }
-
-    const ws = esp32Sockets.get(device.deviceId);
-   if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'schedule',
         relay: appliance.relay,
@@ -378,7 +370,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       }));
       console.log(`✅ Schedule sent to ESP32: Relay ${appliance.relay}`);
     } else {
-      console.warn(`⚠️ ESP32 ${device.deviceId} is offline`);
+      console.warn(`⚠️ ESP32 ${targetDeviceId} is offline`);
     }
 
     res.json({ message: 'Scheduled successfully' });
