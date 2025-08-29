@@ -33,7 +33,7 @@ const io = require('socket.io')(server, {
 });
 
 // === Raw WebSocket Server for ESP32 (using 'ws') ===
-const { WebSocketServer } = require('ws');
+const { WebSocket, WebSocketServer } = require('ws');
 const rawWss = new WebSocketServer({ noServer: true });
 
 // === Device Connection Maps ===
@@ -252,7 +252,6 @@ server.on('upgrade', (request, socket, head) => {
     socket.destroy();
   }
 });
-
 // === Enhanced Keep-Alive Mechanism (Heartbeat) ===
 setInterval(() => {
   esp32Sockets.forEach((ws, deviceId) => {
