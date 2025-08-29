@@ -300,9 +300,10 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const relay = appliance.relay;
     const state = action === 'on';
 
-    const targetDeviceId = 'SmartBoard_01'; // For now
+    const targetDeviceId = 'SmartBoard_01';
     const ws = esp32Sockets.get(targetDeviceId);
 
+    // ✅ Only send if ESP32 is connected
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'command',
@@ -313,10 +314,10 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       console.log(`⚡ Command sent to ESP32 (${targetDeviceId}): Relay ${relay} → ${state ? 'ON' : 'OFF'}`);
     } else {
       console.warn(`⚠️ ESP32 ${targetDeviceId} is offline or not connected`);
-      return res.status(500).json({ error: 'Device offline' });
+      return res.status(500).json({ error: 'Device offline' }); // ✅ Fail fast
     }
 
-    // Notify mobile via Socket.IO
+    // Notify mobile
     const socketId = deviceSockets.get(targetDeviceId);
     if (socketId) {
       io.to(socketId).emit('command', { relay, state });
