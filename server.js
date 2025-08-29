@@ -122,7 +122,6 @@ io.on('connection', (socket) => {
 });
 
 // === RAW WEBSOCKET SERVER (ESP32) ===
-// === RAW WEBSOCKET SERVER (ESP32) ===
 rawWss.on('connection', (ws, req) => {
   // Extract device ID from URL or use default
   let deviceId = 'SmartBoard_01'; // Default device ID
@@ -132,6 +131,15 @@ rawWss.on('connection', (ws, req) => {
 
   console.log(`🔌 ESP32 Connected via Raw WS: ${deviceId} (URL: ${req.url})`);
   esp32Sockets.set(deviceId, ws);
+
+  // ✅ Set up heartbeat
+  ws.isAlive = true;
+
+  // ✅ Listen for pong replies
+  ws.on('pong', () => {
+    ws.isAlive = true;
+    console.log(`🏓 Pong received from ${deviceId}`);
+  });
 
   // Send welcome message
   ws.send(JSON.stringify({ type: 'welcome', device_id: deviceId }));
@@ -228,13 +236,9 @@ rawWss.on('connection', (ws, req) => {
     console.log(`❌ ESP32 Disconnected: ${deviceId}, Code: ${code}, Reason: ${reason ? reason.toString() : 'No reason'}`);
     esp32Sockets.delete(deviceId);
   });
-
-  ws.on('pong', () => {
-    console.log(`🏓 Pong received from ${deviceId}`);
-  });
 });
 
-// === UPGRADE HANDLER (FIXED) ===
+// === UPGRADE HANDLER ===
 server.on('upgrade', (request, socket, head) => {
   const pathname = request.url;
   console.log('🔄 Upgrade request for:', pathname);
@@ -251,26 +255,38 @@ server.on('upgrade', (request, socket, head) => {
     socket.destroy();
   }
 });
-// === Keep-Alive Mechanism ===
-// === Keep-Alive Mechanism ===
+
+// === Enhanced Keep-Alive Mechanism (Heartbeat) ===
 setInterval(() => {
   esp32Sockets.forEach((ws, deviceId) => {
-    if (ws.readyState === ws.OPEN) {
-      try {
-        ws.ping();  // This sends a WebSocket ping frame
-        console.log(`🏓 Ping sent to ${deviceId}`);
-      } catch (err) {
-        console.error(`❌ Ping failed to ${deviceId}:`, err);
-        esp32Sockets.delete(deviceId);
-      }
-    } else {
+    if (ws.readyState !== WebSocket.OPEN) {
       console.log(`🧹 Cleaning up dead connection: ${deviceId}`);
+      esp32Sockets.delete(deviceId);
+      return;
+    }
+
+    // If no pong was received since last ping, terminate
+    if (!ws.isAlive) {
+      console.log(`❌ No pong from ${deviceId}, terminating`);
+      ws.terminate();
+      esp32Sockets.delete(deviceId);
+      return;
+    }
+
+    // Mark as not alive until pong received
+    ws.isAlive = false;
+
+    try {
+      ws.ping();
+      console.log(`🏓 Ping sent to ${deviceId}`);
+    } catch (err) {
+      console.error(`❌ Ping failed to ${deviceId}:`, err);
+      ws.terminate();
       esp32Sockets.delete(deviceId);
     }
   });
-}, 30000); // Every 30 seconds (Render timeout ~55s)
+}, 30000); // Every 30 seconds
 
-// === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 // === RELAY CONTROL – Send Command to ESP32 via Raw WebSocket ===
 app.post('/api/appliances/:id/control', async (req, res) => {
   const { id } = req.params;
@@ -287,12 +303,10 @@ app.post('/api/appliances/:id/control', async (req, res) => {
     const relay = appliance.relay;
     const state = action === 'on';
 
-    // ✅ Always send to SmartBoard_01 (for now)
-    const targetDeviceId = 'SmartBoard_01';
-
-    // ✅ Send command via **raw WebSocket** to ESP32
+    const targetDeviceId = 'SmartBoard_01'; // For now
     const ws = esp32Sockets.get(targetDeviceId);
-    if (ws && ws.readyState === ws.OPEN) {
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'command',
         relay: relay,
@@ -305,7 +319,7 @@ app.post('/api/appliances/:id/control', async (req, res) => {
       return res.status(500).json({ error: 'Device offline' });
     }
 
-    // Also notify mobile via Socket.IO
+    // Notify mobile via Socket.IO
     const socketId = deviceSockets.get(targetDeviceId);
     if (socketId) {
       io.to(socketId).emit('command', { relay, state });
@@ -343,7 +357,6 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       scheduleOff: offDate
     });
 
-    // Get latest device
     const latestData = await SensorData.findOne({
       where: { applianceId: id },
       order: [['timestamp', 'DESC']],
@@ -355,13 +368,12 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
       return res.status(400).json({ error: 'No active device found' });
     }
 
-    // ✅ Send schedule directly to ESP32
     const ws = esp32Sockets.get(device.deviceId);
     if (ws && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
         type: 'schedule',
         relay: appliance.relay,
-        onTime: onDate.getTime(),   // Unix timestamp in ms
+        onTime: onDate.getTime(),
         offTime: offDate.getTime()
       }));
       console.log(`✅ Schedule sent to ESP32: Relay ${appliance.relay}`);
@@ -396,7 +408,6 @@ app.get('/api/sensor-data/history', async (req, res) => {
       ]
     });
 
-    // Convert to plain objects and format timestamp to Unix
     const result = data.map(row => ({
       applianceId: row.applianceId,
       current: row.current,
@@ -404,7 +415,7 @@ app.get('/api/sensor-data/history', async (req, res) => {
       power: row.power,
       energy: row.energy,
       cost: row.cost,
-      timestamp: Math.floor(new Date(row.timestamp).getTime() / 1000) // Unix timestamp
+      timestamp: Math.floor(new Date(row.timestamp).getTime() / 1000)
     }));
 
     res.json(result);
@@ -416,9 +427,8 @@ app.get('/api/sensor-data/history', async (req, res) => {
 
 // === SENSOR DATA INGESTION (HTTP) ===
 app.post('/api/sensor-data', async (req, res) => {
-  // ✅ Handle both deviceId and device_id
   const { device_id, deviceId, ip, timestamp, relays } = req.body;
-  const finalDeviceId = device_id || deviceId || 'SmartBoard_01'; // Fallback
+  const finalDeviceId = device_id || deviceId || 'SmartBoard_01';
   const finalIp = ip || 'Unknown';
 
   if (!finalDeviceId) {
@@ -437,10 +447,7 @@ app.post('/api/sensor-data', async (req, res) => {
       const validTimestamp = timestamp ? timestamp * 1000 : Date.now();
       const date = new Date(validTimestamp);
 
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid timestamp for relay:', r);
-        continue;
-      }
+      if (isNaN(date.getTime())) continue;
 
       const expectedId = relayNumber;
       const defaultNames = { 1: 'Socket A', 2: 'Socket B', 3: 'Socket C', 4: 'Socket D' };
@@ -472,7 +479,7 @@ app.post('/api/sensor-data', async (req, res) => {
         energy: r.energy_kwh || 0,
         cost: r.cost_ghs || 0,
         timestamp: date,
-        device_id: finalDeviceId  // ✅ Use finalDeviceId and underscore
+        device_id: finalDeviceId
       });
     }
 
@@ -488,7 +495,7 @@ app.post('/api/sensor-data', async (req, res) => {
     }
 
     await Device.findOrCreate({
-      where: { deviceId: finalDeviceId }, // ✅ Use finalDeviceId
+      where: { deviceId: finalDeviceId },
       defaults: { ip: finalIp, lastSeen: new Date() }
     });
     await Device.update(
@@ -496,21 +503,15 @@ app.post('/api/sensor-data', async (req, res) => {
       { where: { deviceId: finalDeviceId } }
     );
 
-    // ✅ Save sensor data
     await SensorData.bulkCreate(validRecords);
-
-    // ✅ Emit real-time update to all connected clients (React Native app)
-    console.log('✅ Emitting sensor-update:', validRecords);
     io.emit('sensor-update', validRecords);
 
-    // ✅ Add this log (fixed)
     console.log('✅ Emitted sensor-update to all clients:', validRecords.map(r => ({
       applianceId: r.applianceId,
       power: r.power,
       timestamp: r.timestamp
     })));
 
-    // ✅ Send response
     res.status(201).json({ message: 'Sensor data saved', count: validRecords.length });
   } catch (err) {
     console.error('❌ Sensor data save error:', err);
@@ -656,7 +657,6 @@ app.get('/api/appliances', async (req, res) => {
   }
 });
 
-// Block manual creation on relays 1–4
 app.post('/api/appliances', async (req, res) => {
   const { name, type, relay } = req.body;
   if (!type || !relay) return res.status(400).json({ error: 'Type and relay required' });
@@ -676,7 +676,6 @@ app.post('/api/appliances', async (req, res) => {
   }
 });
 
-// Soft delete
 app.delete('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
   const appliance = await Appliance.findByPk(id);
@@ -685,7 +684,6 @@ app.delete('/api/appliances/:id', async (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
-// Restore
 app.post('/api/appliances/:id/restore', async (req, res) => {
   const { id } = req.params;
   const appliance = await Appliance.findByPk(id, { paranoid: false });
@@ -694,7 +692,6 @@ app.post('/api/appliances/:id/restore', async (req, res) => {
   res.json({ message: 'Restored' });
 });
 
-// Update
 app.put('/api/appliances/:id', async (req, res) => {
   const { id } = req.params;
   const { name, type } = req.body;
@@ -704,7 +701,6 @@ app.put('/api/appliances/:id', async (req, res) => {
   res.json(appliance);
 });
 
-// Cancel schedule
 app.delete('/api/appliances/:id/schedule', async (req, res) => {
   const { id } = req.params;
   const appliance = await Appliance.findByPk(id);
@@ -713,7 +709,6 @@ app.delete('/api/appliances/:id/schedule', async (req, res) => {
   res.json({ message: 'Cancelled' });
 });
 
-// History
 app.get('/api/appliances/:id/history', async (req, res) => {
   const { id } = req.params;
   const range = req.query.range || '7d';
@@ -733,7 +728,6 @@ app.get('/api/appliances/:id/history', async (req, res) => {
   }
 });
 
-// Thresholds
 app.get('/api/thresholds', (req, res) => {
   res.json({ power: powerThreshold });
 });
@@ -748,14 +742,12 @@ app.post('/api/thresholds', (req, res) => {
   res.json({ power: powerThreshold });
 });
 
-// Export
 app.get('/api/export-report', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=report.csv');
   res.setHeader('Content-Type', 'text/csv');
   res.send('timestamp,appliance,current,power,energy,cost\n');
 });
 
-// 404
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
@@ -769,13 +761,11 @@ async function startServer() {
     await sequelize.sync({ alter: true });
     console.log('✅ Tables synchronized');
 
-    // Ensure default device
     await Device.findOrCreate({
       where: { deviceId: 'SmartBoard_01' },
       defaults: { ip: '0.0.0.0', lastSeen: new Date() }
     });
 
-    // Ensure default appliances
     const defaultNames = { 1: 'Socket A', 2: 'Socket B', 3: 'Socket C', 4: 'Socket D' };
     for (const [idStr, name] of Object.entries(defaultNames)) {
       const id = parseInt(idStr);
