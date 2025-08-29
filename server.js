@@ -367,7 +367,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
     }
 
     const ws = esp32Sockets.get(device.deviceId);
-    if (ws && ws.readyState === ws.OPEN) {
+   if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'schedule',
         relay: appliance.relay,
