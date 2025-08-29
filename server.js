@@ -149,10 +149,7 @@ rawWss.on('connection', (ws, req) => {
       const msg = JSON.parse(data);
       console.log(`📥 WS Message from ${deviceId}:`, msg.type);
       
-      if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-        return;
-      }
+
 
       if (msg.type === 'register') {
         const registeredDeviceId = msg.device_id || deviceId;
