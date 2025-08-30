@@ -620,25 +620,30 @@ app.get('/api/user', async (req, res) => {
       return res.status(401).json({ error: 'Authorization token required' });
     }
 
-    const token = authHeader.substring(7);
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('🔐 Decoded JWT userId:', decoded.userId); // 🔥 Add this
+
+    const user = await User.findOne({ where: { id: decoded.userId } });
     
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findOne({ where: { id: decoded.userId } });
-      
-      if (!user) return res.status(404).json({ error: 'User not found' });
-      
-      res.json({ 
-        id: user.id,
-        name: user.name, 
-        email: user.email, 
-        role: user.role || 'user' 
-      });
-    } catch (jwtError) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+    if (!user) {
+      console.warn('❌ User not found for ID:', decoded.userId);
+      return res.status(404).json({ error: 'User not found' });
     }
+
+    console.log('✅ Found user:', { id: user.id, name: user.name, email: user.email });
+    res.json({ 
+      id: user.id,
+      name: user.name, 
+      email: user.email, 
+      role: user.role || 'user' 
+    });
   } catch (err) {
-    console.error('Failed to fetch user:', err);
+    if (err.name === 'JsonWebTokenError') {
+      console.error('❌ Invalid token:', err.message);
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    console.error('Server error:', err);
     res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
