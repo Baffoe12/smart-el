@@ -822,8 +822,8 @@ async function startServer() {
     
     server.listen(port, host, () => {
       console.log(`🚀 Server running on ${host}:${port}`);
-      console.log(`💡 Raw WebSocket: wss://<your-domain>/`);
-      console.log(`📱 Socket.IO: https://<your-domain>/`);
+     console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/`);
+      console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
