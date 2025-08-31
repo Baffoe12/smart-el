@@ -1,7 +1,9 @@
+// models/User.js
 module.exports = (sequelize, DataTypes) => {
   const User = sequelize.define('User', {
     name: {
-      type: DataTypes.STRING
+      type: DataTypes.STRING,
+      allowNull: false, // ✅ Add this
     },
     email: {
       type: DataTypes.STRING,
@@ -18,13 +20,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     underscored: true,
     timestamps: true,
-    tableName: 'users'  // Explicitly set
+    tableName: 'users'
   });
-
-  User.associate = function(models) {
-    // Add associations later if needed
-    // e.g., User.hasMany(models.Appliance)
-  };
 
   return User;
 };

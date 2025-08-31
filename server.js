@@ -391,7 +391,7 @@ app.post('/api/appliances/:id/schedule', async (req, res) => {
   }
 });
 
-// === SENSOR DATA HISTORY ===
+// === SENSOR DATA HISTORY (GLOBAL) ===
 app.get('/api/sensor-data/history', async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
 
@@ -424,6 +424,62 @@ app.get('/api/sensor-data/history', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Fetch history error:', err);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// === APPLIANCE-SPECIFIC HISTORY (NEW!) ✅ ADDED THIS ===
+app.get('/api/appliances/:id/history', async (req, res) => {
+  const { id } = req.params;
+  const { range = '7d' } = req.query;
+
+  const applianceId = parseInt(id, 10);
+  if (isNaN(applianceId)) {
+    return res.status(400).json({ error: 'Invalid appliance ID' });
+  }
+
+  const now = new Date();
+  let fromDate;
+
+  switch (range) {
+    case '24h':
+      fromDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      break;
+    case '7d':
+      fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '30d':
+      fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    default:
+      return res.status(400).json({ error: 'Invalid range. Use: 24h, 7d, 30d' });
+  }
+
+  try {
+    const data = await SensorData.findAll({
+      where: {
+        applianceId: applianceId,
+        timestamp: { [Op.gte]: fromDate }
+      },
+      order: [['timestamp', 'ASC']],
+      attributes: [
+        'power',
+        'current',
+        'voltage',
+        'energy',
+        'cost',
+        [sequelize.fn('UNIX_TIMESTAMP', sequelize.col('timestamp')), 'timestamp']
+      ]
+    });
+
+    const result = data.map(row => ({
+      ...row.get({ plain: true }),
+      timestamp: row.getDataValue('timestamp') // Unix seconds
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error('Fetch appliance history error:', err);
     res.status(500).json({ error: 'Failed to fetch history' });
   }
 });
@@ -574,11 +630,11 @@ app.post('/api/signup', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const user = await User.create({ name, email, passwordHash: hash });
-const token = jwt.sign(
-  { userId: user.id, email: user.email },
-  process.env.JWT_SECRET,
-  { expiresIn: '1h' }
-);
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
     res.status(201).json({ token, user: { id: user.id, name, email } });
   } catch (err) {
@@ -622,7 +678,7 @@ app.get('/api/user', async (req, res) => {
 
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('🔐 Decoded JWT userId:', decoded.userId); // 🔥 Add this
+    console.log('🔐 Decoded JWT userId:', decoded.userId);
 
     const user = await User.findOne({ where: { id: decoded.userId } });
     
@@ -684,8 +740,6 @@ app.get('/api/appliances', async (req, res) => {
   }
 });
 
-// ... (rest of appliance routes remain unchanged)
-
 app.post('/api/appliances', async (req, res) => {
   const { name, type, relay } = req.body;
   if (!type || !relay) return res.status(400).json({ error: 'Type and relay required' });
@@ -735,6 +789,7 @@ app.post('/api/thresholds', (req, res) => {
   res.json({ power: powerThreshold });
 });
 
+// === 404 Catch-All ===
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
@@ -767,8 +822,8 @@ async function startServer() {
     
     server.listen(port, host, () => {
       console.log(`🚀 Server running on ${host}:${port}`);
-      console.log(`💡 Raw WebSocket: wss://smart-el-9lsq.onrender.com/`);
-      console.log(`📱 Socket.IO: https://smart-el-9lsq.onrender.com`);
+      console.log(`💡 Raw WebSocket: wss://<your-domain>/`);
+      console.log(`📱 Socket.IO: https://<your-domain>/`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
