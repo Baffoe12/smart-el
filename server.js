@@ -428,7 +428,6 @@ app.get('/api/sensor-data/history', async (req, res) => {
   }
 });
 
-// === APPLIANCE-SPECIFIC HISTORY (NEW!) ✅ ADDED THIS ===
 app.get('/api/appliances/:id/history', async (req, res) => {
   const { id } = req.params;
   const { range = '7d' } = req.query;
@@ -468,19 +467,27 @@ app.get('/api/appliances/:id/history', async (req, res) => {
         'voltage',
         'energy',
         'cost',
-        [sequelize.fn('UNIX_TIMESTAMP', sequelize.col('timestamp')), 'timestamp']
+       [sequelize.fn('EXTRACT', sequelize.literal('EPOCH FROM "timestamp"')), 'timestamp']
       ]
     });
 
     const result = data.map(row => ({
-      ...row.get({ plain: true }),
-      timestamp: row.getDataValue('timestamp') // Unix seconds
+      power: row.power,
+      current: row.current,
+      voltage: row.voltage,
+      energy: row.energy,
+      cost: row.cost,
+      timestamp: Math.floor(row.getDataValue('timestamp')) // Ensure integer
     }));
 
     res.json(result);
   } catch (err) {
-    console.error('Fetch appliance history error:', err);
-    res.status(500).json({ error: 'Failed to fetch history' });
+    console.error('🔴 Fetch appliance history error:', err);
+    res.status(500).json({ 
+      error: 'Failed to fetch history', 
+      detail: err.message,
+      sql: err.sql // If Sequelize error
+    });
   }
 });
 
