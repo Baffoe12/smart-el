@@ -19,7 +19,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 // === Power Threshold (Default) ===
-let powerThreshold = 140; // Watts
+let powerThreshold = 300; // Watts
 
 // === Initialize Express & HTTP Server ===
 const app = express();
